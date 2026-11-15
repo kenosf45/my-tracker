@@ -1,0 +1,1669 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Track where your week goes: timers, manual entries and weekly limits.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="My Tracker">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<title>My Tracker</title>
+<meta name="theme-color" content="#04122B">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@600;700&display=swap">
+<style>
+/* Layout: one column on phones. From 920px, a "now" column (timer + activity pad) sits left of a "this week" column (totals, chart, log). */
+:root {
+  --bg: #04122B;
+  --surface: #0A1C3E;
+  --surface-2: #10274F;
+  --line: #1C3565;
+  --line-soft: #132B56;
+  --fg: #EDF2FF;
+  --muted: #97A8CD;
+  --dim: #7A8DB6;
+  --mint: #4FD49F;
+  --amber: #FFC845;
+  --peri: #7B8FFB;
+  --danger: #FF5A6A;
+  --danger-bg: rgba(255, 90, 106, 0.12);
+  --amber-bg: rgba(255, 200, 69, 0.10);
+  --scrim: rgba(2, 8, 22, 0.72);
+  --font-display: "Sora", "Manrope", system-ui, sans-serif;
+  --font-ui: "Manrope", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --r-lg: 22px;
+  --r-md: 16px;
+  --r-sm: 12px;
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { background: var(--bg); color: var(--fg); }
+body {
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+body::before {
+  content: ""; position: fixed; inset: 0 0 auto;
+  height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg);
+}
+h1, h2, h3 { margin: 0; font-family: var(--font-display); font-weight: 600; letter-spacing: -0.01em; text-wrap: balance; }
+p { margin: 0; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+button:disabled { cursor: default; }
+:focus-visible { outline: 2px solid var(--peri); outline-offset: 2px; }
+
+.wrap {
+  max-width: 1100px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.hint { font-size: 13px; color: var(--muted); }
+
+/* ---------- top bar ---------- */
+.topbar {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+  background: color-mix(in srgb, var(--bg) 90%, transparent);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line-soft);
+}
+.topbar-inner { display: flex; align-items: center; gap: 10px; padding-block: 12px; }
+.brand { display: flex; align-items: center; gap: 10px; margin-right: auto; min-width: 0; }
+.logo { width: 36px; height: 36px; flex: none; display: block; }
+.logo .ring { transform-origin: 50px 50px; }
+body.running .logo .ring { animation: spin 8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.brand-name { font-family: var(--font-display); font-weight: 700; font-size: 19px; letter-spacing: -0.02em; white-space: nowrap; }
+
+/* ---------- buttons & fields ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 44px; padding: 0 18px; border-radius: var(--r-sm);
+  font-weight: 700; font-size: 14px; border: 1px solid transparent; white-space: nowrap;
+  transition: background-color .15s, border-color .15s, transform .1s, opacity .15s;
+}
+.btn:active:not(:disabled) { transform: scale(0.97); }
+.btn:disabled { opacity: 0.45; }
+.btn svg { width: 18px; height: 18px; }
+.btn.sm { height: 38px; padding: 0 12px; font-size: 13px; }
+.btn.block { width: 100%; }
+.btn.primary { background: var(--mint); color: var(--bg); }
+.btn.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--mint) 88%, var(--fg)); }
+.btn.light { background: var(--fg); color: var(--bg); }
+.btn.ghost { border-color: var(--line); color: var(--fg); }
+.btn.ghost:hover:not(:disabled) { background: var(--surface-2); }
+.btn.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+.btn.danger.armed { background: var(--danger); color: var(--bg); border-color: var(--danger); }
+.icon-btn {
+  width: 40px; height: 40px; flex: none; border-radius: var(--r-sm);
+  display: grid; place-items: center; color: var(--muted);
+  transition: background-color .15s, color .15s;
+}
+.icon-btn:hover:not(:disabled) { background: var(--surface-2); color: var(--fg); }
+.icon-btn:disabled { opacity: 0.3; }
+.icon-btn svg { width: 20px; height: 20px; }
+.link-btn { color: var(--peri); font-weight: 700; font-size: 13px; }
+.link-btn:hover { text-decoration: underline; }
+
+.field { display: grid; gap: 6px; font-size: 13px; font-weight: 700; color: var(--muted); min-width: 0; }
+.field .opt { font-weight: 500; color: var(--dim); }
+.input {
+  height: 48px; width: 100%; min-width: 0; padding: 0 14px;
+  border-radius: var(--r-sm); border: 1px solid var(--line);
+  background: var(--bg); color: var(--fg);
+  font: inherit; font-size: 16px; font-weight: 600;
+}
+.input::placeholder { color: var(--dim); font-weight: 500; }
+.input:focus { outline: none; border-color: var(--peri); box-shadow: 0 0 0 3px color-mix(in srgb, var(--peri) 25%, transparent); }
+fieldset { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; gap: 8px; }
+legend { padding: 0; margin-bottom: 8px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.vh { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
+
+/* ---------- activity chip (icon on a tint of the activity color) ---------- */
+.chip {
+  --act: var(--peri);
+  width: 40px; height: 40px; flex: none; border-radius: 12px;
+  display: grid; place-items: center;
+  background: color-mix(in srgb, var(--act) 18%, transparent); color: var(--act);
+}
+.chip svg { width: 20px; height: 20px; }
+.chip.sm { width: 32px; height: 32px; border-radius: 10px; }
+.chip.sm svg { width: 17px; height: 17px; }
+.chip.lg { width: 52px; height: 52px; border-radius: 16px; }
+.chip.lg svg { width: 26px; height: 26px; }
+.chip i:empty::before { content: attr(data-fb); font-style: normal; font-weight: 800; font-size: 15px; }
+
+/* ---------- page layout ---------- */
+.main { padding-block: 20px 56px; }
+.layout { display: grid; gap: 28px; }
+@media (min-width: 920px) {
+  .layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 36px; align-items: start; }
+}
+.col-now, .col-week { display: grid; gap: 22px; min-width: 0; }
+
+.notice {
+  margin-bottom: 18px; padding: 12px 14px; border-radius: var(--r-sm);
+  background: var(--amber-bg); border: 1px solid color-mix(in srgb, var(--amber) 35%, transparent);
+  color: var(--fg); font-size: 14px;
+}
+
+/* ---------- timer card ---------- */
+.timer-card {
+  --act: var(--peri);
+  position: relative; overflow: hidden;
+  padding: 22px; border-radius: var(--r-lg);
+  background: var(--surface); border: 1px solid var(--line-soft);
+  transition: border-color .3s;
+}
+.timer-card.is-running {
+  border-color: color-mix(in srgb, var(--act) 45%, transparent);
+  background:
+    radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--act) 22%, transparent), transparent 60%),
+    var(--surface);
+}
+.tc-idle { display: grid; gap: 6px; }
+.tc-idle-title { font-family: var(--font-display); font-size: 22px; font-weight: 600; margin-top: 4px; }
+.tc-idle-sub { color: var(--muted); max-width: 38ch; }
+.tc-run { display: grid; gap: 14px; }
+.tc-head { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.tc-head-text { min-width: 0; }
+.tc-name { font-family: var(--font-display); font-size: 22px; font-weight: 600; overflow-wrap: anywhere; }
+.tc-clock {
+  font-family: var(--font-ui); font-weight: 800; font-variant-numeric: tabular-nums;
+  font-size: clamp(48px, 13vw, 68px); line-height: 1; letter-spacing: -0.03em;
+}
+.tc-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; color: var(--muted); font-size: 14px; }
+
+/* ---------- activity pad ---------- */
+.section-head, .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.section-head h2 { font-size: 17px; }
+.pad { display: grid; grid-template-columns: repeat(auto-fill, minmax(102px, 1fr)); gap: 10px; margin-top: 12px; }
+.tile {
+  --act: var(--peri);
+  position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 10px;
+  min-height: 116px; padding: 14px 12px 12px; text-align: left;
+  border-radius: var(--r-md); background: var(--surface); border: 1px solid var(--line-soft);
+  transition: background-color .15s, border-color .15s, transform .12s;
+}
+.tile:hover:not(:disabled) { background: var(--surface-2); }
+.tile:active:not(:disabled) { transform: scale(0.96); }
+.tile:disabled { opacity: 0.5; }
+.t-name { font-weight: 700; font-size: 14px; line-height: 1.2; overflow-wrap: anywhere; }
+.t-sub { margin-top: auto; font-size: 12px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tile.running { border-color: var(--act); background: color-mix(in srgb, var(--act) 12%, var(--surface)); }
+.tile .live-dot { position: absolute; top: 14px; right: 12px; width: 9px; height: 9px; border-radius: 50%; background: var(--act); animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.25; transform: scale(0.8); } }
+.tile.soft .t-sub { color: var(--amber); }
+.tile.hard { border-color: color-mix(in srgb, var(--danger) 60%, transparent); background: color-mix(in srgb, var(--danger) 9%, var(--surface)); }
+.tile.hard .t-sub { color: var(--danger); }
+.tile.skel { background: var(--surface); border-color: var(--line-soft); animation: skel 1.4s ease-in-out infinite; }
+@keyframes skel { 50% { opacity: 0.5; } }
+
+.empty { grid-column: 1 / -1; display: grid; gap: 8px; justify-items: start; padding: 20px; border-radius: var(--r-md); border: 1px dashed var(--line); color: var(--muted); }
+.empty-title { color: var(--fg); font-weight: 700; font-size: 15px; }
+.empty .btn { margin-top: 6px; }
+
+/* ---------- week column ---------- */
+.week-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.week-title { font-size: 26px; font-weight: 700; margin-top: 2px; }
+.week-nav { display: flex; align-items: center; gap: 4px; }
+.summary { display: grid; gap: 8px; }
+.sum-line { display: flex; align-items: baseline; gap: 10px; }
+.sum-num { font-family: var(--font-display); font-weight: 700; font-size: 34px; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.sum-label { color: var(--muted); font-weight: 600; }
+.coverage { height: 8px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.coverage span { display: block; height: 100%; width: 0; border-radius: 99px; background: linear-gradient(90deg, var(--mint), var(--peri)); transition: width .4s; }
+
+.card { padding: 18px; border-radius: var(--r-lg); background: var(--surface); border: 1px solid var(--line-soft); display: grid; gap: 14px; min-width: 0; }
+.card-head h3 { font-size: 16px; }
+
+/* totals */
+.totals { display: grid; gap: 4px; }
+.trow { --act: var(--peri); display: flex; gap: 12px; align-items: flex-start; padding: 10px; margin: 0 -10px; border-radius: var(--r-sm); }
+.trow-main { flex: 1; min-width: 0; display: grid; gap: 7px; }
+.trow-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.trow-name { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+.trow-val { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.trow-val .of { color: var(--muted); font-weight: 600; }
+.bar { height: 6px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.bar span { display: block; height: 100%; border-radius: 99px; background: var(--act); transition: width .4s; }
+.trow-status { font-size: 12px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+.trow.soft .bar span { background: var(--amber); }
+.trow.soft .trow-status { color: var(--amber); }
+.trow.hard { background: var(--danger-bg); }
+.trow.hard .bar span { background: var(--danger); }
+.trow.hard .trow-val, .trow.hard .trow-val .of, .trow.hard .trow-status, .trow.hard .trow-name { color: var(--danger); }
+.live-tag { display: inline-block; margin-left: 8px; padding: 3px 8px; border-radius: 99px; font-size: 10px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; background: color-mix(in srgb, var(--act) 20%, transparent); color: var(--act); vertical-align: 2px; }
+.untouched { font-size: 13px; color: var(--dim); padding-top: 6px; }
+.untouched b { color: var(--muted); font-weight: 600; }
+
+/* chart */
+.chart { position: relative; padding-left: 34px; }
+.plot { position: relative; height: 168px; }
+.gl { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--line-soft); }
+.gl span { position: absolute; left: -34px; top: -8px; font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.cols { position: absolute; top: 0; left: 34px; right: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.ccol { display: grid; grid-template-rows: 168px auto auto; justify-items: center; gap: 3px; min-width: 0; border-radius: 8px; }
+.cbar { width: 100%; height: 168px; display: flex; align-items: flex-end; justify-content: center; }
+.stack { width: min(34px, 80%); display: flex; flex-direction: column-reverse; gap: 1px; border-radius: 7px 7px 3px 3px; overflow: hidden; min-height: 0; }
+.stack.is-empty { height: 3px; border-radius: 2px; background: var(--line); }
+.seg { display: block; width: 100%; flex: none; }
+.cday { margin-top: 8px; padding: 3px 8px; border-radius: 99px; font-size: 12px; font-weight: 700; color: var(--muted); white-space: nowrap; transition: background-color .15s, color .15s; }
+.ctot { min-height: 15px; font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ccol:hover .cday { background: var(--surface-2); color: var(--fg); }
+.ccol.today .cday { color: var(--fg); }
+.ccol.future .cday { color: var(--dim); }
+.ccol.future .stack.is-empty { opacity: 0.45; }
+.ccol.sel .cday { background: var(--fg); color: var(--bg); }
+.chart-foot { height: 50px; }
+@media (max-width: 420px) {
+  .cday { padding: 3px 6px; font-size: 11px; }
+}
+.day-detail { display: grid; gap: 10px; border-top: 1px solid var(--line-soft); padding-top: 14px; }
+.dd-head { display: flex; justify-content: space-between; gap: 10px; font-weight: 700; font-size: 14px; }
+.dd-head span:last-child { font-variant-numeric: tabular-nums; color: var(--muted); }
+.dd-list { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.dd-item { --act: var(--peri); display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.dd-item b { color: var(--fg); font-weight: 600; }
+.dot { --act: var(--peri); width: 9px; height: 9px; border-radius: 50%; background: var(--act); flex: none; }
+
+/* log */
+.log { display: grid; gap: 18px; }
+.lday { display: grid; gap: 2px; }
+.lday-head { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding-bottom: 4px; }
+.lday-head span:last-child { font-variant-numeric: tabular-nums; }
+.lrow {
+  --act: var(--peri);
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px;
+  width: 100%; padding: 10px; margin: 0 -10px; width: calc(100% + 20px);
+  text-align: left; border-radius: var(--r-sm); transition: background-color .15s;
+}
+.lrow:hover { background: var(--surface-2); }
+.lrow-text { min-width: 0; display: grid; gap: 1px; }
+.lrow-name { font-weight: 700; overflow-wrap: anywhere; }
+.lrow-sub { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.lrow-dur { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lrow.live .lrow-dur { color: var(--act); }
+.log-empty { color: var(--muted); font-size: 14px; }
+
+/* ---------- dialogs ---------- */
+dialog {
+  width: min(540px, calc(100vw - 32px)); max-width: none;
+  max-height: calc(100dvh - 48px);
+  padding: 0; border-radius: var(--r-lg);
+  background: var(--surface); color: var(--fg); border: 1px solid var(--line);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+}
+dialog[open] { display: flex; flex-direction: column; animation: dlg-in .22s cubic-bezier(.2, .8, .2, 1); }
+dialog::backdrop { background: var(--scrim); backdrop-filter: blur(3px); }
+@keyframes dlg-in { from { opacity: 0; transform: translateY(12px) scale(0.98); } }
+@media (max-width: 600px) {
+  dialog { width: 100%; margin: auto 0 0; border-radius: var(--r-lg) var(--r-lg) 0 0; max-height: calc(100dvh - 24px - env(safe-area-inset-top, 0px)); border-bottom: 0; }
+  @keyframes dlg-in { from { transform: translateY(40px); opacity: 0; } }
+}
+.dlg { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.dlg-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 16px 8px 20px; }
+.dlg-head h2 { font-size: 20px; }
+.dlg-body { overflow-y: auto; padding: 8px 20px 20px; display: grid; gap: 20px; overscroll-behavior: contain; }
+.dlg-foot {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 14px 20px calc(14px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--line-soft);
+}
+.dlg-foot .grow { flex: 1; }
+.form-err { color: var(--danger); font-size: 14px; font-weight: 600; }
+.form-note { color: var(--muted); font-size: 13px; }
+
+.pick { display: flex; flex-wrap: wrap; gap: 8px; }
+.pchip {
+  --act: var(--peri);
+  display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px 5px 5px;
+  border-radius: 99px; border: 1px solid var(--line); cursor: pointer; font-weight: 700; font-size: 14px;
+  transition: border-color .15s, background-color .15s;
+}
+.pchip .chip { width: 28px; height: 28px; border-radius: 99px; }
+.pchip .chip svg { width: 15px; height: 15px; }
+.pchip:has(input:checked) { border-color: var(--act); background: color-mix(in srgb, var(--act) 14%, transparent); }
+.pchip:has(input:focus-visible) { outline: 2px solid var(--peri); outline-offset: 2px; }
+
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.unit { position: relative; }
+.unit .input { padding-right: 52px; }
+.unit span { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 14px; font-weight: 600; pointer-events: none; }
+.quick { display: flex; flex-wrap: wrap; gap: 6px; }
+.quick button { height: 36px; padding: 0 14px; border-radius: 99px; border: 1px solid var(--line); font-size: 13px; font-weight: 700; color: var(--muted); }
+.quick button:hover { color: var(--fg); background: var(--surface-2); }
+
+.icon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(46px, 1fr)); gap: 6px; }
+.icon-opt { display: grid; place-items: center; height: 46px; border-radius: var(--r-sm); border: 1px solid var(--line-soft); color: var(--muted); cursor: pointer; transition: background-color .15s, color .15s, border-color .15s; }
+.icon-opt svg { width: 20px; height: 20px; }
+.icon-opt:hover { color: var(--fg); background: var(--surface-2); }
+.icon-opt:has(input:checked) { color: var(--sel, var(--peri)); border-color: var(--sel, var(--peri)); background: color-mix(in srgb, var(--sel, var(--peri)) 16%, transparent); }
+.icon-opt:has(input:focus-visible), .swatch:has(input:focus-visible) { outline: 2px solid var(--fg); outline-offset: 2px; }
+.swatches { display: flex; flex-wrap: wrap; gap: 10px; }
+.swatch { width: 34px; height: 34px; border-radius: 50%; cursor: pointer; background: var(--c); box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.15); }
+.swatch:has(input:checked) { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--c); }
+.act-preview { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: var(--r-md); background: var(--bg); border: 1px solid var(--line-soft); }
+.act-preview-name { font-weight: 700; overflow-wrap: anywhere; min-width: 0; }
+
+.srow {
+  --act: var(--peri);
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 12px;
+  width: 100%; padding: 10px; border-radius: var(--r-sm); text-align: left; transition: background-color .15s;
+}
+.srow:hover { background: var(--surface-2); }
+.srow-name { font-weight: 700; overflow-wrap: anywhere; }
+.srow-lim { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.srow-go { width: 18px; height: 18px; color: var(--dim); }
+.set-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.set-head h3 { font-size: 16px; }
+.act-list { display: grid; gap: 2px; margin: 0 -10px; }
+.removed { display: grid; gap: 6px; }
+.removed-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--muted); font-size: 14px; }
+.rule-card { padding: 14px; border-radius: var(--r-md); background: var(--bg); border: 1px solid var(--line-soft); display: grid; gap: 8px; font-size: 14px; color: var(--muted); }
+.rule-card p { display: flex; gap: 10px; align-items: baseline; }
+.rule-card .dot { transform: translateY(1px); }
+
+/* ---------- backup ---------- */
+.backup { display: grid; gap: 10px; padding-top: 6px; }
+.backup-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn:has(input:focus-visible) { outline: 2px solid var(--peri); outline-offset: 2px; }
+label.btn { cursor: pointer; }
+.restore-confirm { display: grid; gap: 12px; padding: 14px; border-radius: var(--r-md); border: 1px solid color-mix(in srgb, var(--amber) 40%, transparent); background: var(--amber-bg); font-size: 14px; }
+
+/* ---------- toast ---------- */
+.toast {
+  position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); z-index: 50;
+  transform: translate(-50%, 16px); opacity: 0; pointer-events: none;
+  max-width: calc(100vw - 32px); padding: 12px 16px; border-radius: var(--r-sm);
+  background: var(--fg); color: var(--bg); font-weight: 700; font-size: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  transition: opacity .2s, transform .2s;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+@media (max-width: 380px) {
+  #openAdd span { display: none; }
+  #openAdd { padding: 0 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/* Standalone page base (the claude.ai viewer used to provide this) */
+html { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); -webkit-text-size-adjust: 100%; }
+body { margin: 0; min-height: 100vh; }
+img { max-width: 100%; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 100 100" aria-hidden="true">
+        <rect width="100" height="100" rx="24" fill="#031A40"/>
+        <g class="ring" fill="none" stroke-width="12" stroke-linecap="round">
+          <path d="M21.02 57.76 A30 30 0 0 1 66.78 25.13" stroke="#4FD49F"/>
+          <path d="M77.19 37.32 A30 30 0 0 1 64.54 76.24" stroke="#FFC845"/>
+          <path d="M50 80 A30 30 0 0 1 27.02 69.28" stroke="#7B8FFB"/>
+        </g>
+      </svg>
+      <span class="brand-name">My Tracker</span>
+    </div>
+    <button id="openAdd" class="btn ghost sm" type="button" aria-label="Add time"><i data-lucide="plus"></i><span>Add time</span></button>
+    <button id="openSettings" class="icon-btn" type="button" aria-label="Settings and limits"><i data-lucide="settings"></i></button>
+  </div>
+</header>
+
+<main class="wrap main">
+  <div id="notice" class="notice" role="status" hidden></div>
+  <div class="layout">
+    <div class="col-now">
+      <section id="timerCard" class="timer-card" aria-live="polite">
+        <div id="tcIdle" class="tc-idle">
+          <p class="eyebrow">Right now</p>
+          <p class="tc-idle-title">No timer running</p>
+          <p class="tc-idle-sub">Tap an activity below to start timing it. Tap it again to stop and save.</p>
+        </div>
+        <div id="tcRun" class="tc-run" hidden>
+          <div class="tc-head">
+            <span id="tcChip" class="chip lg"></span>
+            <div class="tc-head-text"><p class="eyebrow">Timing</p><p id="tcName" class="tc-name"></p></div>
+          </div>
+          <p id="tcClock" class="tc-clock">0:00:00</p>
+          <p class="tc-meta"><span id="tcStarted"></span><button id="tcEdit" type="button" class="link-btn">Edit start time</button></p>
+          <button id="tcStop" type="button" class="btn light block"><i data-lucide="square"></i>Stop and save</button>
+        </div>
+      </section>
+
+      <section>
+        <div class="section-head"><h2>Activities</h2><span class="hint">Totals for this week</span></div>
+        <div id="pad" class="pad"></div>
+      </section>
+    </div>
+
+    <div class="col-week">
+      <div class="week-head">
+        <div><p id="weekEyebrow" class="eyebrow">This week</p><h2 id="weekTitle" class="week-title">&nbsp;</h2></div>
+        <div class="week-nav">
+          <button id="weekToday" type="button" class="btn ghost sm" hidden>This week</button>
+          <button id="weekPrev" type="button" class="icon-btn" aria-label="Previous week"><i data-lucide="chevron-left"></i></button>
+          <button id="weekNext" type="button" class="icon-btn" aria-label="Next week"><i data-lucide="chevron-right"></i></button>
+        </div>
+      </div>
+
+      <div class="summary">
+        <p class="sum-line"><span id="sumTracked" class="sum-num">0m</span><span class="sum-label">tracked</span></p>
+        <div class="coverage"><span id="coverageFill"></span></div>
+        <p id="coverageText" class="hint">&nbsp;</p>
+      </div>
+
+      <section class="card">
+        <div class="card-head"><h3>Weekly totals</h3><span class="hint">Sunday to Sunday</span></div>
+        <div id="totals" class="totals"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><h3>By day</h3><span class="hint">Tap a day for details</span></div>
+        <div id="chart" class="chart"></div>
+        <div id="dayDetail" class="day-detail"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><h3>Entries</h3><span id="entryCount" class="hint"></span></div>
+        <div id="log" class="log"></div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<!-- Add / edit time entry -->
+<dialog id="entryDlg" aria-labelledby="entryTitle">
+  <form id="entryForm" class="dlg" novalidate>
+    <header class="dlg-head"><h2 id="entryTitle">Add time</h2><button type="button" class="icon-btn" data-close aria-label="Close"><i data-lucide="x"></i></button></header>
+    <div class="dlg-body">
+      <fieldset><legend>Activity</legend><div id="entryActs" class="pick"></div></fieldset>
+      <label class="field">Date<input id="entryDate" class="input" type="date" required></label>
+      <fieldset>
+        <legend>Time spent</legend>
+        <div class="row2">
+          <label class="unit"><input id="entryH" class="input" type="number" inputmode="numeric" min="0" max="24" step="1" placeholder="0" aria-label="Hours"><span>hrs</span></label>
+          <label class="unit"><input id="entryM" class="input" type="number" inputmode="numeric" min="0" max="59" step="1" placeholder="0" aria-label="Minutes"><span>min</span></label>
+        </div>
+        <div class="quick" id="entryQuick">
+          <button type="button" data-add="15">+15m</button>
+          <button type="button" data-add="30">+30m</button>
+          <button type="button" data-add="60">+1h</button>
+          <button type="button" data-add="120">+2h</button>
+          <button type="button" data-add="0">Clear</button>
+        </div>
+      </fieldset>
+      <label class="field"><span>Note <span class="opt">optional</span></span><input id="entryNote" class="input" type="text" maxlength="120" placeholder="e.g. Chem problem set" autocomplete="off"></label>
+      <p id="entryInfo" class="form-note" hidden></p>
+      <p id="entryErr" class="form-err" hidden></p>
+    </div>
+    <footer class="dlg-foot">
+      <button id="entryDelete" type="button" class="btn danger" hidden>Delete</button>
+      <span class="grow"></span>
+      <button type="button" class="btn ghost" data-close>Cancel</button>
+      <button id="entrySave" type="submit" class="btn primary">Save</button>
+    </footer>
+  </form>
+</dialog>
+
+<!-- Settings -->
+<dialog id="settingsDlg" aria-labelledby="settingsTitle">
+  <div class="dlg">
+    <header class="dlg-head"><h2 id="settingsTitle">Settings</h2><button type="button" class="icon-btn" data-close aria-label="Close"><i data-lucide="x"></i></button></header>
+    <div class="dlg-body">
+      <div class="set-head"><h3>Activities and weekly limits</h3><button id="newAct" type="button" class="btn primary sm"><i data-lucide="plus"></i>New activity</button></div>
+      <div id="actList" class="act-list"></div>
+      <div class="rule-card">
+        <p><span class="dot" style="--act: var(--mint)"></span><span>Weeks run Sunday 12:00 AM to the next Sunday. Limits reset every Sunday.</span></p>
+        <p><span class="dot" style="--act: var(--amber)"></span><span>Amber means you've gone past the limit, by up to 1 hour.</span></p>
+        <p><span class="dot" style="--act: var(--danger)"></span><span>Red means you're more than 1 hour over the limit.</span></p>
+      </div>
+      <div id="removedWrap" class="removed" hidden>
+        <h3 style="font-size:15px">Removed activities</h3>
+        <div id="removedList" class="removed"></div>
+      </div>
+      <div id="backupWrap" class="backup" hidden>
+        <h3 style="font-size:16px">Backup</h3>
+        <p class="hint">Your time is saved on this device only. Download a backup now and then. You can use it to restore your data or move it to another phone or computer.</p>
+        <div class="backup-actions">
+          <button id="backupDownload" type="button" class="btn ghost sm"><i data-lucide="download"></i>Download backup</button>
+          <label class="btn ghost sm"><i data-lucide="upload"></i>Restore from backup<input id="backupFile" class="vh" type="file" accept="application/json,.json"></label>
+        </div>
+        <p id="backupLast" class="hint"></p>
+        <div id="restoreConfirm" class="restore-confirm" hidden>
+          <p id="restoreText"></p>
+          <div class="backup-actions">
+            <button id="restoreYes" type="button" class="btn danger sm">Replace my data</button>
+            <button id="restoreNo" type="button" class="btn ghost sm">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<!-- Create / edit activity -->
+<dialog id="actDlg" aria-labelledby="actTitle">
+  <form id="actForm" class="dlg" novalidate>
+    <header class="dlg-head"><h2 id="actTitle">New activity</h2><button type="button" class="icon-btn" data-close aria-label="Close"><i data-lucide="x"></i></button></header>
+    <div class="dlg-body">
+      <div id="actPreview" class="act-preview"><span id="actPrevChip" class="chip"></span><span id="actPrevName" class="act-preview-name">New activity</span></div>
+      <label class="field">Name<input id="actName" class="input" type="text" maxlength="40" placeholder="e.g. Sleep" autocomplete="off"></label>
+      <fieldset><legend>Icon</legend><div id="iconGrid" class="icon-grid"></div></fieldset>
+      <fieldset><legend>Color</legend><div id="swatches" class="swatches"></div></fieldset>
+      <label class="field"><span>Weekly limit <span class="opt">leave empty for no limit</span></span>
+        <span class="unit"><input id="actLimit" class="input" type="number" inputmode="decimal" min="0.5" max="168" step="0.5" placeholder="No limit"><span>hrs</span></span>
+      </label>
+      <p id="actErr" class="form-err" hidden></p>
+    </div>
+    <footer class="dlg-foot">
+      <button id="actRemove" type="button" class="btn danger" hidden>Remove</button>
+      <span class="grow"></span>
+      <button type="button" class="btn ghost" data-close>Cancel</button>
+      <button id="actSave" type="submit" class="btn primary">Save</button>
+    </footer>
+  </form>
+</dialog>
+
+<!-- Edit running timer start -->
+<dialog id="startDlg" aria-labelledby="startTitle">
+  <form id="startForm" class="dlg" novalidate>
+    <header class="dlg-head"><h2 id="startTitle">Edit start time</h2><button type="button" class="icon-btn" data-close aria-label="Close"><i data-lucide="x"></i></button></header>
+    <div class="dlg-body">
+      <p class="form-note">Forgot to hit start? Set when you actually began and the timer will count from there.</p>
+      <label class="field">Started at<input id="startInput" class="input" type="datetime-local"></label>
+      <p id="startErr" class="form-err" hidden></p>
+    </div>
+    <footer class="dlg-foot">
+      <button id="startDiscard" type="button" class="btn danger">Discard timer</button>
+      <span class="grow"></span>
+      <button type="button" class="btn ghost" data-close>Cancel</button>
+      <button type="submit" class="btn primary">Save</button>
+    </footer>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script>
+(() => {
+  'use strict';
+
+  // ---------- constants ----------
+  const ICONS = [
+    ['moon', 'Sleep'], ['bed-double', 'Bed'], ['notebook-pen', 'Homework'], ['book-open', 'Reading'],
+    ['pencil', 'Writing'], ['graduation-cap', 'Class'], ['brain', 'Studying'], ['lightbulb', 'Ideas'],
+    ['users', 'Friends'], ['heart', 'Partner'], ['briefcase', 'Business'], ['store', 'Shop'],
+    ['laptop', 'Computer'], ['code', 'Coding'], ['dollar-sign', 'Money'], ['dumbbell', 'Gym'],
+    ['bike', 'Biking'], ['footprints', 'Walk or run'], ['trophy', 'Sports'], ['utensils', 'Eating'],
+    ['coffee', 'Coffee'], ['chef-hat', 'Cooking'], ['car', 'Driving'], ['bus', 'Bus'],
+    ['train-front', 'Train'], ['plane', 'Flight'], ['house', 'Home'], ['palette', 'Art'],
+    ['guitar', 'Guitar'], ['music', 'Music'], ['camera', 'Photos'], ['gamepad-2', 'Video games'],
+    ['tv', 'TV'], ['film', 'Movies'], ['smartphone', 'Phone'], ['church', 'Church'],
+    ['shower-head', 'Self-care'], ['shopping-cart', 'Errands'], ['dog', 'Pet'], ['sparkles', 'Other'],
+  ];
+  const ICON_SET = new Set(ICONS.map(i => i[0]));
+  const COLORS = ['#4FD49F', '#FFC845', '#7B8FFB', '#5CC8F2', '#F27BB5', '#B38BF5', '#A8DB5C', '#FF9F4A', '#3CC8B4', '#E3C49B', '#FF8B78', '#9AAED6'];
+  const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const MS_MIN = 60000;
+  const DAY_MIN = 1440;
+
+  // ---------- small helpers ----------
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const pad2 = n => String(n).padStart(2, '0');
+  const dayKey = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  const parseDay = k => { const [y, m, d] = String(k).split('-').map(Number); return new Date(y, (m || 1) - 1, d || 1); };
+  const sod = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+  const weekStartOf = d => { const s = sod(d); return addDays(s, -s.getDay()); };
+  const weekKeyOf = d => dayKey(weekStartOf(d));
+  const isDayKey = k => /^\d{4}-\d{2}-\d{2}$/.test(String(k));
+  const sumVals = it => { let t = 0; for (const v of it) t += v; return t; };
+
+  function fmtDur(min) {
+    min = Math.max(0, Math.round(min));
+    const h = Math.floor(min / 60), m = min % 60;
+    if (!h) return `${m}m`;
+    if (!m) return `${h}h`;
+    return `${h}h ${m}m`;
+  }
+  function fmtClock(ms) {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    return `${Math.floor(s / 3600)}:${pad2(Math.floor((s % 3600) / 60))}:${pad2(s % 60)}`;
+  }
+  // Compact total for the narrow chart columns: 45m, 7.5h, 12h
+  function fmtShort(min) {
+    min = Math.round(min);
+    if (min < 60) return `${min}m`;
+    const h = min / 60;
+    return h >= 10 ? `${Math.round(h)}h` : `${Math.round(h * 10) / 10}h`;
+  }
+  const fmtTime = t => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const fmtMD = d => d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  const fmtLimit = h => (Number.isInteger(h) ? `${h}h` : fmtDur(h * 60));
+  const toLocalInput = ms => { const d = new Date(ms); return `${dayKey(d)}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
+
+  function startedLabel(ms) {
+    const d = new Date(ms);
+    if (dayKey(d) === dayKey(new Date())) return fmtTime(ms);
+    return `${d.toLocaleDateString([], { weekday: 'short' })} ${fmtTime(ms)}`;
+  }
+  function dayLabel(k) {
+    const today = dayKey(new Date()), yest = dayKey(addDays(new Date(), -1));
+    if (k === today) return 'Today';
+    if (k === yest) return 'Yesterday';
+    return parseDay(k).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
+  }
+
+  // ---------- state ----------
+  const S = {
+    db: null,
+    canWrite: true,
+    offline: false,
+    acts: new Map(),
+    actOrder: [],
+    actsLoaded: false,
+    timer: null,
+    weeks: new Map(),           // weekKey -> { entries, loaded, unsub }
+    curKey: weekKeyOf(new Date()),
+    viewKey: weekKeyOf(new Date()),
+    selDay: null,               // { week, idx }
+    busy: false,
+    lastAct: null,
+  };
+
+  function normAct(id, a) {
+    a = a || {};
+    return {
+      id,
+      name: String(a.name || 'Untitled').slice(0, 40),
+      icon: ICON_SET.has(a.icon) ? a.icon : 'sparkles',
+      color: /^#[0-9a-f]{6}$/i.test(a.color) ? a.color : '#9AAED6',
+      limitHours: typeof a.limitHours === 'number' && a.limitHours > 0 ? a.limitHours : null,
+      order: Number(a.order) || 0,
+      archived: !!a.archived,
+      createdAt: Number(a.createdAt) || 0,
+    };
+  }
+  const activeActs = () => S.actOrder.filter(a => !a.archived);
+  const act = id => S.acts.get(id) || { id, name: 'Removed activity', icon: 'sparkles', color: '#9AAED6', limitHours: null, order: 9999, archived: true };
+  const iconHTML = a => `<i data-lucide="${a.icon}" data-fb="${esc((a.name || '?').charAt(0).toUpperCase())}"></i>`;
+
+  function paintIcons() {
+    if (window.lucide && typeof window.lucide.createIcons === 'function') {
+      try { window.lucide.createIcons({ icons: window.lucide.icons, attrs: { 'stroke-width': 2, 'aria-hidden': 'true' } }); } catch (e) { /* icons are decorative */ }
+    }
+  }
+
+  function limitStatus(a, min) {
+    if (!a.limitHours) return { kind: 'none' };
+    const lim = a.limitHours * 60, over = min - lim;
+    if (over > 60) return { kind: 'hard', over, lim };
+    if (over > 0) return { kind: 'soft', over, lim };
+    return { kind: 'ok', left: lim - min, lim };
+  }
+
+  // ---------- week math ----------
+  function splitByWeek(start, end) {
+    const out = [];
+    let cur = start;
+    while (cur < end) {
+      const ws = weekStartOf(new Date(cur));
+      const next = addDays(ws, 7).getTime();
+      const segEnd = Math.min(end, next);
+      out.push({ start: cur, end: segEnd, week: dayKey(ws) });
+      cur = segEnd;
+    }
+    return out;
+  }
+
+  function computeWeek(key) {
+    const ws = parseDay(key);
+    const dayBounds = Array.from({ length: 8 }, (_, i) => addDays(ws, i).getTime());
+    const w = S.weeks.get(key);
+    const entries = w ? w.entries : [];
+    const totals = new Map();
+    const days = Array.from({ length: 7 }, () => new Map());
+    const add = (m, id, v) => m.set(id, (m.get(id) || 0) + v);
+
+    const spread = (id, s, e, minutes) => {
+      const span = (e - s) / MS_MIN;
+      const scale = span > 0 ? minutes / span : 0;
+      for (let i = 0; i < 7; i++) {
+        const ov = Math.min(e, dayBounds[i + 1]) - Math.max(s, dayBounds[i]);
+        if (ov > 0) add(days[i], id, (ov / MS_MIN) * scale);
+      }
+    };
+
+    for (const e of entries) {
+      add(totals, e.activityId, e.minutes);
+      if (typeof e.start === 'number' && typeof e.end === 'number' && e.end > e.start) {
+        spread(e.activityId, e.start, e.end, e.minutes);
+      } else {
+        const idx = Math.round((parseDay(e.day) - ws) / 86400000);
+        if (idx >= 0 && idx < 7) add(days[idx], e.activityId, e.minutes);
+      }
+    }
+
+    let live = null;
+    if (S.timer) {
+      const s = Math.max(S.timer.start, dayBounds[0]);
+      const e = Math.min(Date.now(), dayBounds[7]);
+      if (e > s) {
+        const m = (e - s) / MS_MIN;
+        add(totals, S.timer.activityId, m);
+        spread(S.timer.activityId, s, e, m);
+        live = S.timer.activityId;
+      }
+    }
+    return { ws, entries, totals, days, live, loaded: !!(w && w.loaded) };
+  }
+
+  // ---------- notices & toast ----------
+  function showNotice(text) { const n = $('#notice'); n.textContent = text; n.hidden = false; }
+  function hideNotice() { $('#notice').hidden = true; }
+  let toastT = 0;
+  function toast(text) {
+    const t = $('#toast');
+    t.textContent = text;
+    t.classList.add('show');
+    clearTimeout(toastT);
+    toastT = setTimeout(() => t.classList.remove('show'), 3200);
+  }
+  function guardWrite() {
+    if (!S.db) { toast('Open My Tracker on claude.ai while signed in to save time.'); return false; }
+    if (!S.canWrite) { toast('Only the owner of this tracker can log time.'); return false; }
+    return true;
+  }
+  function writeFailed(e) {
+    const code = e && e.code;
+    if (code === 'quota_exceeded') toast('Storage is full. Delete some old entries and try again.');
+    else if (code === 'invalid_argument') { toast("This tracker didn't accept the change. Only its owner can edit it."); }
+    else if (code === 'revoked') toast('Access to this tracker changed. Reload the page.');
+    else toast("Couldn't save. Check your connection and try again.");
+  }
+
+  // ---------- rendering ----------
+  let rq = 0;
+  function scheduleRender() {
+    if (rq) return;
+    rq = 1;
+    const run = () => { if (!rq) return; rq = 0; render(); };
+    requestAnimationFrame(run);
+    setTimeout(run, 150);
+  }
+
+  function render() {
+    document.body.classList.toggle('running', !!S.timer);
+    const noData = !S.db;
+    $('#openAdd').disabled = noData || (S.actsLoaded && !activeActs().length);
+    renderTimer();
+    renderPad();
+    renderWeek();
+    if ($('#settingsDlg').open) renderSettings();
+    paintIcons();
+  }
+
+  function renderTimer() {
+    const t = S.timer;
+    $('#tcIdle').hidden = !!t;
+    $('#tcRun').hidden = !t;
+    const card = $('#timerCard');
+    card.classList.toggle('is-running', !!t);
+    if (!t) { card.style.removeProperty('--act'); return; }
+    const a = act(t.activityId);
+    card.style.setProperty('--act', a.color);
+    const chip = $('#tcChip');
+    chip.style.setProperty('--act', a.color);
+    chip.innerHTML = iconHTML(a);
+    $('#tcName').textContent = a.name;
+    $('#tcStarted').textContent = `Started ${startedLabel(t.start)}`;
+    $('#tcClock').textContent = fmtClock(Date.now() - t.start);
+  }
+
+  function renderPad() {
+    const pad = $('#pad');
+    if (S.offline) {
+      pad.innerHTML = `<div class="empty"><p class="empty-title">Your tracker isn't connected</p><p>Open My Tracker from claude.ai while signed in. Your activities and time are saved there.</p></div>`;
+      return;
+    }
+    if (!S.actsLoaded) {
+      pad.innerHTML = Array.from({ length: 6 }, () => '<div class="tile skel" aria-hidden="true"></div>').join('');
+      return;
+    }
+    const acts = activeActs();
+    if (!acts.length) {
+      pad.innerHTML = `<div class="empty"><p class="empty-title">No activities yet</p><p>Add the things you spend time on, like sleep, homework or the gym. Each one gets its own button here.</p><button type="button" class="btn primary" data-new-act><i data-lucide="plus"></i>Create an activity</button></div>`;
+      return;
+    }
+    const wd = computeWeek(S.curKey);
+    pad.innerHTML = acts.map(a => {
+      const m = wd.totals.get(a.id) || 0;
+      const st = limitStatus(a, m);
+      const running = !!S.timer && S.timer.activityId === a.id;
+      const lim = a.limitHours ? ` / ${fmtLimit(a.limitHours)}` : '';
+      const cls = ['tile', running ? 'running' : '', st.kind === 'soft' ? 'soft' : '', st.kind === 'hard' ? 'hard' : ''].join(' ');
+      const label = running ? `Stop timing ${a.name}` : `Start timing ${a.name}`;
+      return `<button type="button" class="${cls}" style="--act:${a.color}" data-act="${esc(a.id)}" aria-label="${esc(label)}" aria-pressed="${running}" ${S.busy ? 'disabled' : ''}>
+        <span class="chip" style="--act:${a.color}">${iconHTML(a)}</span>
+        ${running ? '<span class="live-dot" aria-hidden="true"></span>' : ''}
+        <span class="t-name">${esc(a.name)}</span>
+        <span class="t-sub">${running ? 'Running · ' : ''}${fmtDur(m)}${lim}</span>
+      </button>`;
+    }).join('');
+  }
+
+  function weekEyebrow(key) {
+    const diff = Math.round((parseDay(S.curKey) - parseDay(key)) / (7 * 86400000));
+    if (diff === 0) return 'This week';
+    if (diff === 1) return 'Last week';
+    return `${diff} weeks ago`;
+  }
+
+  function renderWeek() {
+    const key = S.viewKey;
+    const isCur = key === S.curKey;
+    const ws = parseDay(key), we = addDays(ws, 6);
+    $('#weekEyebrow').textContent = weekEyebrow(key);
+    $('#weekTitle').textContent = `${fmtMD(ws)} – ${ws.getMonth() === we.getMonth() ? we.getDate() : fmtMD(we)}`;
+    $('#weekNext').disabled = isCur;
+    $('#weekToday').hidden = isCur;
+
+    const wd = computeWeek(key);
+    const total = sumVals(wd.totals.values());
+    $('#sumTracked').textContent = fmtDur(total);
+    const span = isCur ? (Date.now() - ws.getTime()) / MS_MIN : 7 * DAY_MIN;
+    const pct = span > 0 ? Math.min(100, (total / span) * 100) : 0;
+    $('#coverageFill').style.width = `${pct}%`;
+    $('#coverageText').textContent = isCur
+      ? `${Math.round(pct)}% of the ${Math.floor(span / 60)} hours since Sunday 12 AM`
+      : `${Math.round(pct)}% of the week's 168 hours`;
+
+    renderTotals(wd);
+    renderChart(wd, isCur);
+    renderLog(wd);
+  }
+
+  function renderTotals(wd) {
+    const el = $('#totals');
+    if (S.offline) { el.innerHTML = '<p class="log-empty">Nothing to show until the tracker connects.</p>'; return; }
+    if (!wd.loaded || !S.actsLoaded) { el.innerHTML = '<p class="log-empty">Loading…</p>'; return; }
+    const rows = [];
+    const idle = [];
+    const seen = new Set();
+    for (const a of S.actOrder) {
+      seen.add(a.id);
+      const m = wd.totals.get(a.id) || 0;
+      if (m >= 0.5 || (!a.archived && a.limitHours)) rows.push({ a, m });
+      else if (!a.archived) idle.push(a);
+    }
+    for (const [id, m] of wd.totals) if (!seen.has(id) && m >= 0.5) rows.push({ a: act(id), m });
+    if (!rows.length) {
+      el.innerHTML = `<p class="log-empty">No time logged ${S.viewKey === S.curKey ? 'this week yet. Start a timer or add time to see it here.' : 'that week.'}</p>`;
+      return;
+    }
+    rows.sort((x, y) => y.m - x.m || x.a.order - y.a.order);
+    const max = Math.max(1, ...rows.filter(r => !r.a.limitHours).map(r => r.m));
+    el.innerHTML = rows.map(({ a, m }) => {
+      const st = limitStatus(a, m);
+      const width = a.limitHours ? Math.min(100, (m / st.lim) * 100) : (m / max) * 100;
+      let status = '';
+      if (st.kind === 'ok') status = `<p class="trow-status">${fmtDur(st.left)} left</p>`;
+      else if (st.kind === 'soft') status = `<p class="trow-status">Over the limit by ${fmtDur(st.over)}</p>`;
+      else if (st.kind === 'hard') status = `<p class="trow-status">Over the limit by ${fmtDur(st.over)}</p>`;
+      const live = wd.live === a.id ? '<span class="live-tag">Live</span>' : '';
+      return `<div class="trow ${st.kind}" style="--act:${a.color}">
+        <span class="chip sm" style="--act:${a.color}">${iconHTML(a)}</span>
+        <div class="trow-main">
+          <div class="trow-top"><span class="trow-name">${esc(a.name)}${live}</span><span class="trow-val">${fmtDur(m)}${a.limitHours ? `<span class="of"> / ${fmtLimit(a.limitHours)}</span>` : ''}</span></div>
+          <div class="bar"><span style="width:${width.toFixed(1)}%"></span></div>
+          ${status}
+        </div>
+      </div>`;
+    }).join('') + (idle.length ? `<p class="untouched">Nothing logged yet: <b>${idle.map(a => esc(a.name)).join(', ')}</b></p>` : '');
+  }
+
+  function renderChart(wd, isCur) {
+    const el = $('#chart');
+    const todayIdx = isCur ? new Date().getDay() : -1;
+    const dayTotals = wd.days.map(m => sumVals(m.values()));
+    let sel = S.selDay && S.selDay.week === S.viewKey ? S.selDay.idx : null;
+    if (sel == null) {
+      if (isCur) sel = todayIdx;
+      else { sel = 0; for (let i = 6; i >= 0; i--) if (dayTotals[i] > 0) { sel = i; break; } }
+    }
+    const orderIdx = id => { const a = S.acts.get(id); return a ? a.order : 9999; };
+    const grid = [0, 6, 12, 18, 24].map(h => `<div class="gl" style="bottom:${(h / 24) * 100}%"><span>${h}h</span></div>`).join('');
+    const cols = wd.days.map((m, i) => {
+      const total = dayTotals[i];
+      const items = [...m.entries()].filter(([, v]) => v > 0).sort((x, y) => orderIdx(x[0]) - orderIdx(y[0]));
+      const h = Math.min(100, (total / DAY_MIN) * 100);
+      const segs = items.map(([id, v]) => {
+        const a = act(id);
+        return `<span class="seg" style="height:${((v / total) * 100).toFixed(2)}%;background:${a.color}" title="${esc(a.name)} ${fmtDur(v)}"></span>`;
+      }).join('');
+      const d = addDays(wd.ws, i);
+      const future = isCur && i > todayIdx;
+      const cls = ['ccol', i === todayIdx ? 'today' : '', i === sel ? 'sel' : '', future ? 'future' : ''].join(' ');
+      return `<button type="button" class="${cls}" data-day="${i}" aria-pressed="${i === sel}" aria-label="${esc(d.toLocaleDateString([], { weekday: 'long' }))}: ${fmtDur(total)}">
+        <span class="cbar">${total > 0 ? `<span class="stack" style="height:${h.toFixed(2)}%">${segs}</span>` : '<span class="stack is-empty"></span>'}</span>
+        <span class="cday">${DAYS[i]}</span>
+        <span class="ctot">${total >= 0.5 ? fmtShort(total) : ''}</span>
+      </button>`;
+    }).join('');
+    el.innerHTML = `<div class="plot">${grid}</div><div class="cols">${cols}</div><div class="chart-foot"></div>`;
+
+    // selected day breakdown
+    const dd = $('#dayDetail');
+    const m = wd.days[sel];
+    const items = [...m.entries()].filter(([, v]) => v >= 0.5).sort((x, y) => y[1] - x[1]);
+    const label = addDays(wd.ws, sel).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
+    dd.innerHTML = `<div class="dd-head"><span>${esc(label)}</span><span>${fmtDur(dayTotals[sel])}</span></div>` +
+      (items.length
+        ? `<div class="dd-list">${items.map(([id, v]) => { const a = act(id); return `<span class="dd-item" style="--act:${a.color}"><span class="dot" style="--act:${a.color}"></span><b>${esc(a.name)}</b>${fmtDur(v)}</span>`; }).join('')}</div>`
+        : `<p class="log-empty">Nothing logged on this day.</p>`);
+  }
+
+  function renderLog(wd) {
+    const el = $('#log');
+    if (S.offline) { el.innerHTML = ''; $('#entryCount').textContent = ''; return; }
+    if (!wd.loaded) { el.innerHTML = '<p class="log-empty">Loading…</p>'; $('#entryCount').textContent = ''; return; }
+    const sortKey = e => (typeof e.start === 'number' ? e.start : parseDay(e.day).getTime() + 12 * 3600000);
+    const list = [...wd.entries].sort((x, y) => sortKey(y) - sortKey(x) || (y.createdAt || 0) - (x.createdAt || 0));
+    const groups = new Map();
+    let liveRow = null;
+    if (S.timer && wd.live) {
+      const a = act(S.timer.activityId);
+      const k = dayKey(new Date(Math.max(S.timer.start, wd.ws.getTime())));
+      liveRow = { k, html: `<button type="button" class="lrow live" style="--act:${a.color}" data-live>
+        <span class="chip sm" style="--act:${a.color}">${iconHTML(a)}</span>
+        <span class="lrow-text"><span class="lrow-name">${esc(a.name)}</span><span class="lrow-sub">Started ${esc(startedLabel(S.timer.start))} · still running</span></span>
+        <span class="lrow-dur">${fmtDur((Date.now() - S.timer.start) / MS_MIN)}</span>
+      </button>` };
+      groups.set(k, []);
+    }
+    for (const e of list) {
+      const k = isDayKey(e.day) ? e.day : dayKey(new Date(sortKey(e)));
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(e);
+    }
+    const keys = [...groups.keys()].sort().reverse();
+    $('#entryCount').textContent = list.length ? `${list.length} ${list.length === 1 ? 'entry' : 'entries'}` : '';
+    if (!keys.length) {
+      el.innerHTML = `<p class="log-empty">${S.viewKey === S.curKey ? 'Your timed sessions and added time will show up here.' : 'No entries that week.'}</p>`;
+      return;
+    }
+    el.innerHTML = keys.map(k => {
+      const es = groups.get(k);
+      const dayTotal = es.reduce((t, e) => t + e.minutes, 0);
+      const rows = es.map(e => {
+        const a = act(e.activityId);
+        const when = typeof e.start === 'number' && typeof e.end === 'number'
+          ? `${fmtTime(e.start)} – ${fmtTime(e.end)}`
+          : 'Added by hand';
+        const sub = e.note ? `${when} · ${esc(e.note)}` : when;
+        return `<button type="button" class="lrow" style="--act:${a.color}" data-entry="${esc(e.week)}/${esc(e.id)}" aria-label="Edit ${esc(a.name)} entry, ${fmtDur(e.minutes)}">
+          <span class="chip sm" style="--act:${a.color}">${iconHTML(a)}</span>
+          <span class="lrow-text"><span class="lrow-name">${esc(a.name)}</span><span class="lrow-sub">${sub}</span></span>
+          <span class="lrow-dur">${fmtDur(e.minutes)}</span>
+        </button>`;
+      }).join('');
+      const live = liveRow && liveRow.k === k ? liveRow.html : '';
+      return `<div class="lday"><p class="lday-head"><span>${esc(dayLabel(k))}</span><span>${dayTotal ? fmtDur(dayTotal) : ''}</span></p>${live}${rows}</div>`;
+    }).join('');
+  }
+
+  function renderSettings() {
+    const acts = activeActs();
+    $('#actList').innerHTML = acts.length
+      ? acts.map(a => `<button type="button" class="srow" data-edit-act="${esc(a.id)}" style="--act:${a.color}">
+          <span class="chip sm" style="--act:${a.color}">${iconHTML(a)}</span>
+          <span class="srow-name">${esc(a.name)}</span>
+          <span class="srow-lim">${a.limitHours ? `${fmtLimit(a.limitHours)} / week` : 'No limit'}</span>
+          <i data-lucide="chevron-right" class="srow-go"></i>
+        </button>`).join('')
+      : `<p class="hint" style="padding:0 10px">${S.actsLoaded ? 'No activities yet. Create one to get started.' : 'Loading…'}</p>`;
+    const removed = S.actOrder.filter(a => a.archived);
+    $('#removedWrap').hidden = !removed.length;
+    $('#removedList').innerHTML = removed.map(a => `<div class="removed-row"><span>${esc(a.name)}</span><button type="button" class="btn ghost sm" data-restore="${esc(a.id)}">Restore</button></div>`).join('');
+  }
+
+  // ---------- data ----------
+  function ensureWeekSubs() {
+    const need = new Set([S.curKey, S.viewKey]);
+    for (const [k, w] of S.weeks) {
+      if (!need.has(k)) { try { w.unsub && w.unsub(); } catch (e) {} S.weeks.delete(k); }
+    }
+    for (const k of need) if (!S.weeks.has(k)) subscribeWeek(k);
+  }
+
+  function subscribeWeek(key) {
+    const w = { entries: [], loaded: false, unsub: null };
+    S.weeks.set(key, w);
+    if (!S.db) return;
+    w.unsub = S.db.collection(`weeks/${key}/entries`).onSnapshot(snap => {
+      w.entries = snap.docs
+        .map(d => ({ id: d.id, week: key, ...d.data() }))
+        .filter(e => e.activityId && typeof e.minutes === 'number' && e.minutes > 0);
+      w.loaded = true;
+      scheduleRender();
+    }, err => { w.loaded = true; subError(err); scheduleRender(); });
+  }
+
+  function subError(err) {
+    const code = err && err.code;
+    if (code === 'revoked') showNotice('Access to this tracker changed. Reload the page to continue.');
+    else showNotice("Couldn't load part of your data. Reload the page to try again.");
+  }
+
+  async function writeTimer(t) {
+    await S.db.doc('state/timer').set(t ? { activityId: t.activityId, start: t.start } : { activityId: null, start: null });
+  }
+
+  async function saveSegments(actId, start, end) {
+    let total = 0;
+    for (const seg of splitByWeek(start, end)) {
+      const minutes = Math.round((seg.end - seg.start) / MS_MIN);
+      if (minutes < 1) continue;
+      await S.db.collection(`weeks/${seg.week}/entries`).doc().set({
+        activityId: actId, minutes, day: dayKey(new Date(seg.start)),
+        start: seg.start, end: seg.end, note: '', source: 'timer', createdAt: Date.now(),
+      });
+      total += minutes;
+    }
+    return total;
+  }
+
+  async function stopRunning(silent) {
+    const cur = S.timer;
+    if (!cur) return 0;
+    const mins = await saveSegments(cur.activityId, cur.start, Date.now());
+    S.timer = null;
+    scheduleRender();
+    await writeTimer(null);
+    if (!silent) toast(mins >= 1 ? `Saved ${fmtDur(mins)} of ${act(cur.activityId).name}` : 'Under a minute, so nothing was saved');
+    return mins;
+  }
+
+  async function onTile(actId) {
+    if (S.busy || !guardWrite()) return;
+    S.busy = true;
+    try {
+      const cur = S.timer;
+      if (cur && cur.activityId === actId) {
+        await stopRunning(false);
+      } else {
+        let saved = 0;
+        if (cur) saved = await stopRunning(true);
+        const start = Date.now();
+        S.timer = { activityId: actId, start };
+        S.lastAct = actId;
+        scheduleRender();
+        await writeTimer(S.timer);
+        const name = act(actId).name;
+        toast(cur && saved >= 1 ? `Saved ${fmtDur(saved)} of ${act(cur.activityId).name}. Now timing ${name}.` : `Timing ${name}`);
+      }
+    } catch (e) { writeFailed(e); }
+    finally { S.busy = false; scheduleRender(); }
+  }
+
+  // ---------- dialogs ----------
+  function openDlg(d) { if (!d.open) d.showModal(); paintIcons(); }
+  $$('dialog').forEach(d => {
+    d.addEventListener('click', e => { if (e.target === d) d.close(); });
+    $$('[data-close]', d).forEach(b => b.addEventListener('click', () => d.close()));
+  });
+
+  function armable(btn, label, armedLabel, action) {
+    let t = 0;
+    const reset = () => { btn.classList.remove('armed'); btn.textContent = label; clearTimeout(t); };
+    btn.addEventListener('click', async () => {
+      if (!btn.classList.contains('armed')) {
+        btn.classList.add('armed');
+        btn.textContent = armedLabel;
+        clearTimeout(t);
+        t = setTimeout(reset, 4000);
+        return;
+      }
+      reset();
+      await action();
+    });
+    return reset;
+  }
+
+  function setErr(el, msg) { el.textContent = msg || ''; el.hidden = !msg; }
+
+  // --- entry dialog ---
+  let editingEntry = null;
+  function openEntry(entry) {
+    if (!guardWrite()) return;
+    const acts = activeActs();
+    if (entry && !acts.some(a => a.id === entry.activityId)) acts.push(act(entry.activityId));
+    if (!acts.length) { openActivity(null); return; }
+    editingEntry = entry || null;
+    $('#entryTitle').textContent = entry ? 'Edit entry' : 'Add time';
+    const selId = entry ? entry.activityId : (S.lastAct && S.acts.has(S.lastAct) && !act(S.lastAct).archived ? S.lastAct : acts[0].id);
+    $('#entryActs').innerHTML = acts.map(a => `<label class="pchip" style="--act:${a.color}">
+      <input class="vh" type="radio" name="entryAct" value="${esc(a.id)}" ${a.id === selId ? 'checked' : ''}>
+      <span class="chip" style="--act:${a.color}">${iconHTML(a)}</span>${esc(a.name)}</label>`).join('');
+    const today = dayKey(new Date());
+    const date = $('#entryDate');
+    date.max = today;
+    date.value = entry && isDayKey(entry.day) ? entry.day : today;
+    $('#entryH').value = entry ? Math.floor(entry.minutes / 60) : '';
+    $('#entryM').value = entry ? entry.minutes % 60 : '';
+    $('#entryNote').value = entry ? (entry.note || '') : '';
+    const info = $('#entryInfo');
+    if (entry && typeof entry.start === 'number' && typeof entry.end === 'number') {
+      info.textContent = `Timed from ${startedLabel(entry.start)} to ${startedLabel(entry.end)}. Changing the time keeps the start and moves the end.`;
+      info.hidden = false;
+    } else info.hidden = true;
+    $('#entryDelete').hidden = !entry;
+    resetEntryDelete();
+    setErr($('#entryErr'), '');
+    openDlg($('#entryDlg'));
+    if (!entry) setTimeout(() => $('#entryH').focus(), 60);
+  }
+
+  $('#entryQuick').addEventListener('click', e => {
+    const b = e.target.closest('[data-add]');
+    if (!b) return;
+    const add = Number(b.dataset.add);
+    let cur = (Number($('#entryH').value) || 0) * 60 + (Number($('#entryM').value) || 0);
+    cur = add === 0 ? 0 : Math.min(DAY_MIN, cur + add);
+    $('#entryH').value = cur ? Math.floor(cur / 60) : '';
+    $('#entryM').value = cur ? cur % 60 : '';
+  });
+
+  $('#entryForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const err = $('#entryErr');
+    const checked = $('input[name="entryAct"]:checked');
+    const day = $('#entryDate').value;
+    const h = Number($('#entryH').value || 0), m = Number($('#entryM').value || 0);
+    const note = $('#entryNote').value.trim().slice(0, 120);
+    if (!checked) return setErr(err, 'Pick an activity.');
+    if (!isDayKey(day)) return setErr(err, 'Pick a date.');
+    if (day > dayKey(new Date())) return setErr(err, "You can't add time to a future date.");
+    if (!Number.isFinite(h) || !Number.isFinite(m) || h < 0 || m < 0 || m > 59 || h % 1 || m % 1) return setErr(err, 'Use whole hours and 0 to 59 minutes.');
+    const minutes = h * 60 + m;
+    if (minutes < 1) return setErr(err, 'Enter how long you spent, like 1 hr 30 min.');
+    if (minutes > DAY_MIN) return setErr(err, 'One entry can be at most 24 hours.');
+    if (S.busy || !guardWrite()) return;
+    setErr(err, '');
+    const actId = checked.value;
+    const wk = weekKeyOf(parseDay(day));
+    S.busy = true;
+    $('#entrySave').disabled = true;
+    try {
+      if (editingEntry) {
+        const old = editingEntry;
+        const data = {
+          activityId: actId, minutes, day, note,
+          start: typeof old.start === 'number' ? old.start : null,
+          end: typeof old.end === 'number' ? old.end : null,
+          source: old.source || 'manual', createdAt: old.createdAt || Date.now(),
+        };
+        if (data.start != null && day !== old.day) { data.start = null; data.end = null; data.source = 'manual'; }
+        else if (data.start != null && minutes !== old.minutes) { data.end = data.start + minutes * MS_MIN; }
+        if (wk === old.week) await S.db.doc(`weeks/${wk}/entries/${old.id}`).set(data);
+        else {
+          await S.db.collection(`weeks/${wk}/entries`).doc().set(data);
+          await S.db.doc(`weeks/${old.week}/entries/${old.id}`).delete();
+        }
+        toast('Entry updated');
+      } else {
+        await S.db.collection(`weeks/${wk}/entries`).doc().set({
+          activityId: actId, minutes, day, start: null, end: null, note, source: 'manual', createdAt: Date.now(),
+        });
+        toast(`Added ${fmtDur(minutes)} of ${act(actId).name}`);
+      }
+      S.lastAct = actId;
+      $('#entryDlg').close();
+    } catch (ex) { writeFailed(ex); }
+    finally { S.busy = false; $('#entrySave').disabled = false; scheduleRender(); }
+  });
+
+  const resetEntryDelete = armable($('#entryDelete'), 'Delete', 'Tap again to delete', async () => {
+    const old = editingEntry;
+    if (!old || S.busy || !guardWrite()) return;
+    S.busy = true;
+    try {
+      await S.db.doc(`weeks/${old.week}/entries/${old.id}`).delete();
+      $('#entryDlg').close();
+      toast('Entry deleted');
+    } catch (ex) { writeFailed(ex); }
+    finally { S.busy = false; scheduleRender(); }
+  });
+
+  // --- settings dialog ---
+  function openSettings() {
+    renderSettings();
+    renderBackup();
+    $('#restoreConfirm').hidden = true;
+    pendingRestore = null;
+    openDlg($('#settingsDlg'));
+  }
+
+  // --- activity dialog ---
+  let editingAct = null;
+  $('#iconGrid').innerHTML = ICONS.map(([n, label]) => `<label class="icon-opt" title="${label}"><input class="vh" type="radio" name="actIcon" value="${n}" aria-label="${label}"><i data-lucide="${n}"></i></label>`).join('');
+  $('#swatches').innerHTML = COLORS.map(c => `<label class="swatch" style="--c:${c}" title="${c}"><input class="vh" type="radio" name="actColor" value="${c}" aria-label="Color ${c}"></label>`).join('');
+
+  function updateActPreview() {
+    const icon = ($('input[name="actIcon"]:checked') || {}).value || 'sparkles';
+    const color = ($('input[name="actColor"]:checked') || {}).value || COLORS[0];
+    const name = $('#actName').value.trim() || 'New activity';
+    const chip = $('#actPrevChip');
+    chip.style.setProperty('--act', color);
+    chip.innerHTML = iconHTML({ icon, name });
+    $('#actPrevName').textContent = name;
+    $('#iconGrid').style.setProperty('--sel', color);
+    paintIcons();
+  }
+
+  function openActivity(a) {
+    if (!guardWrite()) return;
+    editingAct = a || null;
+    $('#actTitle').textContent = a ? 'Edit activity' : 'New activity';
+    $('#actName').value = a ? a.name : '';
+    const used = new Set(activeActs().map(x => x.color));
+    const color = a ? a.color : (COLORS.find(c => !used.has(c)) || COLORS[activeActs().length % COLORS.length]);
+    const icon = a ? a.icon : 'sparkles';
+    $$('input[name="actIcon"]').forEach(r => { r.checked = r.value === icon; });
+    $$('input[name="actColor"]').forEach(r => { r.checked = r.value === color; });
+    $('#actLimit').value = a && a.limitHours ? a.limitHours : '';
+    $('#actRemove').hidden = !a;
+    resetActRemove();
+    setErr($('#actErr'), '');
+    updateActPreview();
+    openDlg($('#actDlg'));
+    if (!a) setTimeout(() => $('#actName').focus(), 60);
+  }
+  $('#actForm').addEventListener('input', updateActPreview);
+  $('#actForm').addEventListener('change', updateActPreview);
+
+  $('#actForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const err = $('#actErr');
+    const name = $('#actName').value.trim().slice(0, 40);
+    const icon = ($('input[name="actIcon"]:checked') || {}).value;
+    const color = ($('input[name="actColor"]:checked') || {}).value;
+    const limRaw = $('#actLimit').value.trim();
+    if (!name) return setErr(err, 'Give the activity a name.');
+    const dupe = activeActs().find(x => x.name.toLowerCase() === name.toLowerCase() && (!editingAct || x.id !== editingAct.id));
+    if (dupe) return setErr(err, `You already have an activity called ${dupe.name}.`);
+    if (!ICON_SET.has(icon)) return setErr(err, 'Pick an icon.');
+    if (!COLORS.includes(color)) return setErr(err, 'Pick a color.');
+    let limitHours = null;
+    if (limRaw !== '') {
+      limitHours = Number(limRaw);
+      if (!Number.isFinite(limitHours) || limitHours < 0.25 || limitHours > 168) return setErr(err, 'Enter a weekly limit between 0.5 and 168 hours, or leave it empty for no limit.');
+      limitHours = Math.round(limitHours * 4) / 4;
+    }
+    if (S.busy || !guardWrite()) return;
+    setErr(err, '');
+    S.busy = true;
+    $('#actSave').disabled = true;
+    try {
+      if (editingAct) {
+        await S.db.doc(`activities/${editingAct.id}`).update({ name, icon, color, limitHours });
+        toast(`Saved ${name}`);
+      } else {
+        const order = S.actOrder.reduce((mx, x) => Math.max(mx, x.order), 0) + 1;
+        await S.db.collection('activities').doc().set({ name, icon, color, limitHours, order, archived: false, createdAt: Date.now() });
+        toast(`Added ${name}`);
+      }
+      $('#actDlg').close();
+    } catch (ex) { writeFailed(ex); }
+    finally { S.busy = false; $('#actSave').disabled = false; scheduleRender(); }
+  });
+
+  const resetActRemove = armable($('#actRemove'), 'Remove', 'Tap again to remove', async () => {
+    const a = editingAct;
+    if (!a || S.busy || !guardWrite()) return;
+    if (S.timer && S.timer.activityId === a.id) { setErr($('#actErr'), `Stop the ${a.name} timer before removing it.`); return; }
+    S.busy = true;
+    try {
+      await S.db.doc(`activities/${a.id}`).update({ archived: true });
+      $('#actDlg').close();
+      toast(`Removed ${a.name}. Its past time stays in your history.`);
+    } catch (ex) { writeFailed(ex); }
+    finally { S.busy = false; scheduleRender(); }
+  });
+
+  // --- running timer start dialog ---
+  function openStartEdit() {
+    if (!S.timer || !guardWrite()) return;
+    const inp = $('#startInput');
+    inp.value = toLocalInput(S.timer.start);
+    inp.max = toLocalInput(Date.now());
+    setErr($('#startErr'), '');
+    resetDiscard();
+    openDlg($('#startDlg'));
+  }
+  $('#startForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const err = $('#startErr');
+    const v = $('#startInput').value;
+    const t = v ? new Date(v).getTime() : NaN;
+    if (!Number.isFinite(t)) return setErr(err, 'Pick a date and time.');
+    if (t > Date.now()) return setErr(err, "The start time can't be in the future.");
+    if (Date.now() - t > 14 * DAY_MIN * MS_MIN) return setErr(err, 'Pick a start time within the last 14 days.');
+    if (!S.timer || S.busy || !guardWrite()) return;
+    S.busy = true;
+    try {
+      S.timer = { activityId: S.timer.activityId, start: t };
+      scheduleRender();
+      await writeTimer(S.timer);
+      $('#startDlg').close();
+      toast(`Start time set to ${startedLabel(t)}`);
+    } catch (ex) { writeFailed(ex); }
+    finally { S.busy = false; scheduleRender(); }
+  });
+  const resetDiscard = armable($('#startDiscard'), 'Discard timer', 'Tap again to discard', async () => {
+    if (!S.timer || S.busy || !guardWrite()) return;
+    S.busy = true;
+    try {
+      const name = act(S.timer.activityId).name;
+      S.timer = null;
+      scheduleRender();
+      await writeTimer(null);
+      $('#startDlg').close();
+      toast(`Discarded the ${name} timer`);
+    } catch (ex) { writeFailed(ex); }
+    finally { S.busy = false; scheduleRender(); }
+  });
+
+  // ---------- events ----------
+  $('#pad').addEventListener('click', e => {
+    const t = e.target.closest('[data-act]');
+    if (t) return onTile(t.dataset.act);
+    if (e.target.closest('[data-new-act]')) openActivity(null);
+  });
+  $('#tcStop').addEventListener('click', async () => {
+    if (S.busy || !S.timer || !guardWrite()) return;
+    S.busy = true;
+    try { await stopRunning(false); } catch (ex) { writeFailed(ex); }
+    finally { S.busy = false; scheduleRender(); }
+  });
+  $('#tcEdit').addEventListener('click', openStartEdit);
+  $('#openAdd').addEventListener('click', () => openEntry(null));
+  $('#openSettings').addEventListener('click', openSettings);
+  $('#newAct').addEventListener('click', () => openActivity(null));
+  $('#actList').addEventListener('click', e => {
+    const b = e.target.closest('[data-edit-act]');
+    if (b && S.acts.has(b.dataset.editAct)) openActivity(S.acts.get(b.dataset.editAct));
+  });
+  $('#removedList').addEventListener('click', async e => {
+    const b = e.target.closest('[data-restore]');
+    if (!b || S.busy || !guardWrite()) return;
+    S.busy = true;
+    try { await S.db.doc(`activities/${b.dataset.restore}`).update({ archived: false }); toast(`Restored ${act(b.dataset.restore).name}`); }
+    catch (ex) { writeFailed(ex); }
+    finally { S.busy = false; scheduleRender(); }
+  });
+  $('#log').addEventListener('click', e => {
+    if (e.target.closest('[data-live]')) return openStartEdit();
+    const b = e.target.closest('[data-entry]');
+    if (!b) return;
+    const [wk, id] = b.dataset.entry.split('/');
+    const w = S.weeks.get(wk);
+    const entry = w && w.entries.find(x => x.id === id);
+    if (entry) openEntry(entry);
+  });
+  $('#chart').addEventListener('click', e => {
+    const b = e.target.closest('[data-day]');
+    if (!b) return;
+    S.selDay = { week: S.viewKey, idx: Number(b.dataset.day) };
+    scheduleRender();
+  });
+  function goWeek(delta) {
+    const next = dayKey(addDays(parseDay(S.viewKey), delta * 7));
+    if (next > S.curKey) return;
+    S.viewKey = next;
+    S.selDay = null;
+    ensureWeekSubs();
+    scheduleRender();
+  }
+  $('#weekPrev').addEventListener('click', () => goWeek(-1));
+  $('#weekNext').addEventListener('click', () => goWeek(1));
+  $('#weekToday').addEventListener('click', () => { S.viewKey = S.curKey; S.selDay = null; ensureWeekSubs(); scheduleRender(); });
+
+  // ---------- clock ----------
+  let lastMinute = -1, lastDay = dayKey(new Date());
+  setInterval(() => {
+    const now = Date.now();
+    if (S.timer) $('#tcClock').textContent = fmtClock(now - S.timer.start);
+    const mk = Math.floor(now / MS_MIN);
+    if (mk === lastMinute) return;
+    lastMinute = mk;
+    const dk = dayKey(new Date(now));
+    const wk = weekKeyOf(new Date(now));
+    if (wk !== S.curKey) {
+      const wasCur = S.viewKey === S.curKey;
+      S.curKey = wk;
+      if (wasCur) { S.viewKey = wk; S.selDay = null; }
+      ensureWeekSubs();
+    }
+    if (S.timer || dk !== lastDay) { lastDay = dk; scheduleRender(); }
+  }, 1000);
+
+  // ---------- on-device storage ----------
+  // Same calls as the claude.ai database, kept in this browser's localStorage. Used whenever the
+  // page runs on its own (GitHub Pages, a home-screen app) instead of inside claude.ai.
+  const LS_KEY = 'mytracker.v1';
+  let LOCAL = null;
+  function createLocalDb() {
+    let docs = {};
+    let ok = true;
+    const clone = v => JSON.parse(JSON.stringify(v));
+    const load = () => {
+      try {
+        const raw = localStorage.getItem(LS_KEY);
+        const parsed = raw ? JSON.parse(raw) : null;
+        docs = parsed && parsed.docs && typeof parsed.docs === 'object' ? parsed.docs : {};
+      } catch (e) { ok = false; docs = {}; }
+    };
+    const save = () => {
+      try { localStorage.setItem(LS_KEY, JSON.stringify({ v: 1, savedAt: Date.now(), docs })); }
+      catch (e) { throw { code: 'quota_exceeded', message: String(e) }; }
+    };
+    load();
+    const listeners = new Set();
+    const depth = p => p.split('/').length;
+    const meta = { fromCache: false, hasPendingWrites: false };
+    const docSnap = path => { const d = docs[path]; return { id: path.split('/').pop(), exists: !!d, data: () => (d ? clone(d) : undefined), metadata: meta }; };
+    const fire = l => {
+      if (l.kind === 'doc') return l.next(docSnap(l.path));
+      const pre = l.path + '/', dd = depth(l.path) + 1;
+      const list = Object.keys(docs).filter(p => p.startsWith(pre) && depth(p) === dd).sort().map(docSnap);
+      l.next({ docs: list, size: list.length, empty: !list.length, metadata: meta, docChanges: () => [] });
+    };
+    let pending = 0;
+    const notify = () => {
+      if (pending) return;
+      pending = setTimeout(() => { pending = 0; for (const l of listeners) { try { fire(l); } catch (e) {} } }, 0);
+    };
+    window.addEventListener('storage', e => { if (e.key === LS_KEY) { load(); notify(); } });
+    const newId = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '').slice(0, 20) : Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
+    const listen = (kind, path, next) => {
+      const l = { kind, path, next };
+      listeners.add(l);
+      setTimeout(() => { if (listeners.has(l)) fire(l); }, 0);
+      return () => listeners.delete(l);
+    };
+    const commit = (path, value) => {
+      const prev = docs[path];
+      if (value === undefined) delete docs[path]; else docs[path] = value;
+      try { save(); } catch (e) { if (prev === undefined) delete docs[path]; else docs[path] = prev; throw e; }
+      notify();
+    };
+    const doc = path => ({
+      id: path.split('/').pop(), path,
+      get: async () => docSnap(path),
+      set: async data => commit(path, clone(data)),
+      update: async data => {
+        if (!docs[path]) throw { code: 'invalid_argument', message: 'Document does not exist' };
+        commit(path, Object.assign({}, docs[path], clone(data)));
+      },
+      delete: async () => commit(path, undefined),
+      onSnapshot: next => listen('doc', path, next),
+      collection: p => collection(path + '/' + p),
+    });
+    const collection = path => ({
+      path,
+      doc: id => doc(path + '/' + (id || newId())),
+      onSnapshot: next => listen('col', path, next),
+    });
+    return {
+      db: { doc, collection },
+      ok: () => ok,
+      isEmpty: () => !Object.keys(docs).length,
+      entryCount: () => Object.keys(docs).filter(k => k.includes('/entries/')).length,
+      exportData: () => ({ app: 'My Tracker', version: 1, exportedAt: new Date().toISOString(), docs: clone(docs) }),
+      importData: obj => {
+        const prev = docs;
+        docs = clone(obj.docs);
+        try { save(); } catch (e) { docs = prev; throw e; }
+        notify();
+      },
+    };
+  }
+
+  // Your activities, created the first time the app opens on a device.
+  const STARTER = [
+    ['sleep', 'Sleep', 'moon', '#7B8FFB', 49], ['homework', 'Homework', 'notebook-pen', '#FFC845', null],
+    ['friends', 'Friends', 'users', '#5CC8F2', null], ['girlfriend', 'Girlfriend', 'heart', '#F27BB5', null],
+    ['business', 'My business', 'briefcase', '#4FD49F', null], ['learning', 'Learning', 'graduation-cap', '#B38BF5', null],
+    ['workout', 'Working out', 'dumbbell', '#A8DB5C', null], ['eating', 'Eating', 'utensils', '#FF9F4A', null],
+    ['travel', 'Traveling', 'car', '#3CC8B4', null], ['hobbies', 'Hobbies', 'palette', '#E3C49B', null],
+    ['gaming', 'Video games', 'gamepad-2', '#FF8B78', null],
+  ];
+  async function seedStarter(db) {
+    const now = Date.now();
+    for (let i = 0; i < STARTER.length; i++) {
+      const [id, name, icon, color, lim] = STARTER[i];
+      await db.doc(`activities/${id}`).set({ name, icon, color, limitHours: lim, order: i + 1, archived: false, createdAt: now + i });
+    }
+    await db.doc('meta/app').set({ seededAt: now });
+  }
+
+  // ---------- backup (on-device mode only) ----------
+  const LAST_BACKUP_KEY = 'mytracker.lastBackup';
+  function renderBackup() {
+    $('#backupWrap').hidden = !LOCAL;
+    if (!LOCAL) return;
+    let last = null;
+    try { last = Number(localStorage.getItem(LAST_BACKUP_KEY)) || null; } catch (e) {}
+    $('#backupLast').textContent = last
+      ? `Last backup: ${new Date(last).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}`
+      : 'No backup downloaded on this device yet.';
+  }
+  $('#backupDownload').addEventListener('click', () => {
+    if (!LOCAL) return;
+    const blob = new Blob([JSON.stringify(LOCAL.exportData(), null, 1)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `my-tracker-backup-${dayKey(new Date())}.json`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+    try { localStorage.setItem(LAST_BACKUP_KEY, String(Date.now())); } catch (e) {}
+    renderBackup();
+    toast('Backup downloaded');
+  });
+  let pendingRestore = null;
+  $('#backupFile').addEventListener('change', async e => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!f || !LOCAL) return;
+    try {
+      const obj = JSON.parse(await f.text());
+      if (!obj || obj.app !== 'My Tracker' || !obj.docs || typeof obj.docs !== 'object') throw new Error('not a backup');
+      pendingRestore = obj;
+      const n = Object.keys(obj.docs).filter(k => k.includes('/entries/')).length;
+      const when = obj.exportedAt ? new Date(obj.exportedAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : 'an unknown date';
+      $('#restoreText').textContent = `Replace everything on this device with the backup from ${when}? It has ${n} ${n === 1 ? 'entry' : 'entries'}. What's on this device now (${LOCAL.entryCount()} entries) will be overwritten.`;
+      $('#restoreConfirm').hidden = false;
+    } catch (ex) {
+      pendingRestore = null;
+      $('#restoreConfirm').hidden = true;
+      toast("That file isn't a My Tracker backup.");
+    }
+  });
+  $('#restoreNo').addEventListener('click', () => { pendingRestore = null; $('#restoreConfirm').hidden = true; });
+  $('#restoreYes').addEventListener('click', () => {
+    if (!pendingRestore || !LOCAL) return;
+    try {
+      LOCAL.importData(pendingRestore);
+      pendingRestore = null;
+      $('#restoreConfirm').hidden = true;
+      S.selDay = null;
+      toast('Backup restored');
+    } catch (ex) { writeFailed(ex); }
+  });
+
+  // ---------- boot ----------
+  async function boot() {
+    render();
+    const use = name => (window.claude && typeof window.claude.use === 'function' ? window.claude.use(name).catch(() => null) : Promise.resolve(null));
+    const loadTimer = setTimeout(() => {
+      if (!S.actsLoaded && !S.offline) showNotice("Can't reach your data yet. It will load as soon as the connection comes back.");
+    }, 10000);
+    let [db, user] = await Promise.all([use('db'), use('user')]);
+    if (!db) {
+      // Running on its own: keep everything in this browser.
+      LOCAL = createLocalDb();
+      db = LOCAL.db;
+      if (!LOCAL.ok()) showNotice("This browser is blocking storage, so time you log won't be kept after you close the page. Turn off private browsing to save it.");
+      if (LOCAL.isEmpty()) { try { await seedStarter(db); } catch (e) {} }
+      try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch (e) {}
+      if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
+    S.db = db;
+    if (user) {
+      try { const can = await user.can('data.write'); if (can === false) S.canWrite = false; } catch (e) {}
+      if (!S.canWrite) showNotice('This tracker is private to its owner, so you can look but not log time.');
+    }
+
+    db.collection('activities').onSnapshot(snap => {
+      S.acts = new Map(snap.docs.map(d => [d.id, normAct(d.id, d.data())]));
+      S.actOrder = [...S.acts.values()].sort((a, b) => a.order - b.order || a.createdAt - b.createdAt || a.name.localeCompare(b.name));
+      S.actsLoaded = true;
+      if (!snap.metadata.fromCache) { clearTimeout(loadTimer); if (S.canWrite) hideNotice(); }
+      scheduleRender();
+    }, err => { clearTimeout(loadTimer); S.actsLoaded = true; subError(err); scheduleRender(); });
+
+    db.doc('state/timer').onSnapshot(snap => {
+      const d = snap.exists ? snap.data() : null;
+      S.timer = d && d.activityId && typeof d.start === 'number' ? { activityId: String(d.activityId), start: d.start } : null;
+      scheduleRender();
+    }, subError);
+
+    ensureWeekSubs();
+  }
+  boot();
+})();
+</script>
+</body>
+</html>
