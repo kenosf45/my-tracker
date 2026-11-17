@@ -284,7 +284,7 @@ legend { padding: 0; margin-bottom: 8px; font-size: 13px; font-weight: 700; colo
 .lday-head span:last-child { font-variant-numeric: tabular-nums; }
 .lrow {
   --act: var(--peri);
-  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px;
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 12px;
   width: 100%; padding: 10px; margin: 0 -10px; width: calc(100% + 20px);
   text-align: left; border-radius: var(--r-sm); transition: background-color .15s;
 }
@@ -294,6 +294,8 @@ legend { padding: 0; margin-bottom: 8px; font-size: 13px; font-weight: 700; colo
 .lrow-sub { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
 .lrow-dur { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .lrow.live .lrow-dur { color: var(--act); }
+.lrow-edit { width: 16px; height: 16px; color: var(--dim); transition: color .15s; }
+.lrow:hover .lrow-edit { color: var(--fg); }
 .log-empty { color: var(--muted); font-size: 14px; }
 
 /* ---------- dialogs ---------- */
@@ -304,18 +306,23 @@ dialog {
   background: var(--surface); color: var(--fg); border: 1px solid var(--line);
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
 }
+/* Sizing note: every flex item here uses flex-basis auto. Safari sizes a column flexbox
+   with no fixed height from its items' flex-basis, so "flex: 1" (basis 0) collapsed the
+   popup to nothing and left only the blurred backdrop on iPhone. */
 dialog[open] { display: flex; flex-direction: column; animation: dlg-in .22s cubic-bezier(.2, .8, .2, 1); }
-dialog::backdrop { background: var(--scrim); backdrop-filter: blur(3px); }
-@keyframes dlg-in { from { opacity: 0; transform: translateY(12px) scale(0.98); } }
+dialog::backdrop { background: var(--scrim); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+/* Motion only, never opacity: if the animation is skipped the popup is still fully visible. */
+@keyframes dlg-in { from { transform: translateY(12px) scale(0.98); } }
 @media (max-width: 600px) {
-  dialog { width: 100%; margin: auto 0 0; border-radius: var(--r-lg) var(--r-lg) 0 0; max-height: calc(100dvh - 24px - env(safe-area-inset-top, 0px)); border-bottom: 0; }
-  @keyframes dlg-in { from { transform: translateY(40px); opacity: 0; } }
+  dialog { width: 100%; margin: auto 0 0; border-radius: var(--r-lg) var(--r-lg) 0 0; max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px - env(safe-area-inset-top, 0px)); border-bottom: 0; }
+  @keyframes dlg-in { from { transform: translateY(40px); } }
 }
-.dlg { display: flex; flex-direction: column; min-height: 0; flex: 1; }
-.dlg-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 16px 8px 20px; }
+.dlg { display: flex; flex-direction: column; min-height: 0; flex: 0 1 auto; }
+.dlg-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 16px 8px 20px; }
 .dlg-head h2 { font-size: 20px; }
-.dlg-body { overflow-y: auto; padding: 8px 20px 20px; display: grid; gap: 20px; overscroll-behavior: contain; }
+.dlg-body { flex: 0 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 8px 20px 20px; display: grid; gap: 20px; overscroll-behavior: contain; }
 .dlg-foot {
+  flex: none;
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   padding: 14px 20px calc(14px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--line-soft);
@@ -391,6 +398,13 @@ label.btn { cursor: pointer; }
   transition: opacity .2s, transform .2s;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+.toast { display: flex; align-items: center; gap: 16px; }
+.toast.has-action.show { pointer-events: auto; }
+.toast-btn { flex: none; padding: 6px 4px; color: var(--bg); font-weight: 800; text-decoration: underline; text-underline-offset: 3px; }
+.fix-long { padding: 12px 14px; border-radius: var(--r-sm); background: var(--amber-bg); border: 1px solid color-mix(in srgb, var(--amber) 35%, transparent); color: var(--fg); }
+.fix-head { display: grid; gap: 2px; min-width: 0; }
+.start-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.start-row .input { flex: 1 1 200px; }
 
 @media (max-width: 380px) {
   #openAdd span { display: none; }
@@ -442,7 +456,7 @@ img { max-width: 100%; }
             <div class="tc-head-text"><p class="eyebrow">Timing</p><p id="tcName" class="tc-name"></p></div>
           </div>
           <p id="tcClock" class="tc-clock">0:00:00</p>
-          <p class="tc-meta"><span id="tcStarted"></span><button id="tcEdit" type="button" class="link-btn">Edit start time</button></p>
+          <p class="tc-meta"><span id="tcStarted"></span><button id="tcEdit" type="button" class="link-btn">Edit time</button></p>
           <button id="tcStop" type="button" class="btn light block"><i data-lucide="square"></i>Stop and save</button>
         </div>
       </section>
@@ -581,20 +595,35 @@ img { max-width: 100%; }
   </form>
 </dialog>
 
-<!-- Edit running timer start -->
+<!-- Edit a running timer: fix its length and stop, or move its start -->
 <dialog id="startDlg" aria-labelledby="startTitle">
   <form id="startForm" class="dlg" novalidate>
-    <header class="dlg-head"><h2 id="startTitle">Edit start time</h2><button type="button" class="icon-btn" data-close aria-label="Close"><i data-lucide="x"></i></button></header>
+    <header class="dlg-head"><h2 id="startTitle">Edit timer</h2><button type="button" class="icon-btn" data-close aria-label="Close"><i data-lucide="x"></i></button></header>
     <div class="dlg-body">
-      <p class="form-note">Forgot to hit start? Set when you actually began and the timer will count from there.</p>
-      <label class="field">Started at<input id="startInput" class="input" type="datetime-local"></label>
+      <div class="act-preview"><span id="fixChip" class="chip"></span><span class="fix-head"><span id="fixName" class="act-preview-name"></span><span id="fixRunning" class="form-note"></span></span></div>
+      <p id="fixLong" class="form-note fix-long" hidden></p>
+      <fieldset>
+        <legend>How long did it actually last?</legend>
+        <div class="row2">
+          <label class="unit"><input id="fixH" class="input" type="number" inputmode="numeric" min="0" max="336" step="1" placeholder="0" aria-label="Hours"><span>hrs</span></label>
+          <label class="unit"><input id="fixM" class="input" type="number" inputmode="numeric" min="0" max="59" step="1" placeholder="0" aria-label="Minutes"><span>min</span></label>
+        </div>
+        <p class="form-note">Forgot to stop it? Change this to the real time, then tap Stop and save. It counts from the start time below.</p>
+      </fieldset>
+      <fieldset>
+        <legend>Started at</legend>
+        <div class="start-row">
+          <input id="startInput" class="input" type="datetime-local" aria-label="Started at">
+          <button id="startSave" type="button" class="btn ghost">Save, keep running</button>
+        </div>
+        <p class="form-note">Forgot to hit start? Set when you really began and the timer keeps going from there.</p>
+      </fieldset>
       <p id="startErr" class="form-err" hidden></p>
     </div>
     <footer class="dlg-foot">
       <button id="startDiscard" type="button" class="btn danger">Discard timer</button>
       <span class="grow"></span>
-      <button type="button" class="btn ghost" data-close>Cancel</button>
-      <button type="submit" class="btn primary">Save</button>
+      <button id="fixStop" type="submit" class="btn primary"><i data-lucide="square"></i>Stop and save</button>
     </footer>
   </form>
 </dialog>
@@ -782,12 +811,25 @@ img { max-width: 100%; }
   function showNotice(text) { const n = $('#notice'); n.textContent = text; n.hidden = false; }
   function hideNotice() { $('#notice').hidden = true; }
   let toastT = 0;
-  function toast(text) {
+  // action: optional { label, run } shown as a button inside the toast (e.g. "Edit")
+  function toast(text, action) {
     const t = $('#toast');
-    t.textContent = text;
+    t.textContent = '';
+    const msg = document.createElement('span');
+    msg.textContent = text;
+    t.appendChild(msg);
+    if (action) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'toast-btn';
+      b.textContent = action.label;
+      b.addEventListener('click', () => { t.classList.remove('show'); action.run(); });
+      t.appendChild(b);
+    }
+    t.classList.toggle('has-action', !!action);
     t.classList.add('show');
     clearTimeout(toastT);
-    toastT = setTimeout(() => t.classList.remove('show'), 3200);
+    toastT = setTimeout(() => t.classList.remove('show'), action ? 7000 : 3200);
   }
   function guardWrite() {
     if (!S.db) { toast('Open My Tracker on claude.ai while signed in to save time.'); return false; }
@@ -998,6 +1040,7 @@ img { max-width: 100%; }
         <span class="chip sm" style="--act:${a.color}">${iconHTML(a)}</span>
         <span class="lrow-text"><span class="lrow-name">${esc(a.name)}</span><span class="lrow-sub">Started ${esc(startedLabel(S.timer.start))} · still running</span></span>
         <span class="lrow-dur">${fmtDur((Date.now() - S.timer.start) / MS_MIN)}</span>
+        <i data-lucide="pencil" class="lrow-edit"></i>
       </button>` };
       groups.set(k, []);
     }
@@ -1025,6 +1068,7 @@ img { max-width: 100%; }
           <span class="chip sm" style="--act:${a.color}">${iconHTML(a)}</span>
           <span class="lrow-text"><span class="lrow-name">${esc(a.name)}</span><span class="lrow-sub">${sub}</span></span>
           <span class="lrow-dur">${fmtDur(e.minutes)}</span>
+          <i data-lucide="pencil" class="lrow-edit"></i>
         </button>`;
       }).join('');
       const live = liveRow && liveRow.k === k ? liveRow.html : '';
@@ -1079,33 +1123,50 @@ img { max-width: 100%; }
     await S.db.doc('state/timer').set(t ? { activityId: t.activityId, start: t.start } : { activityId: null, start: null });
   }
 
+  // The biggest piece of the last timer save, so the "Saved" toast can offer Edit.
+  let lastSaved = null;
   async function saveSegments(actId, start, end) {
     let total = 0;
+    lastSaved = null;
     for (const seg of splitByWeek(start, end)) {
       const minutes = Math.round((seg.end - seg.start) / MS_MIN);
       if (minutes < 1) continue;
-      await S.db.collection(`weeks/${seg.week}/entries`).doc().set({
+      const ref = S.db.collection(`weeks/${seg.week}/entries`).doc();
+      const data = {
         activityId: actId, minutes, day: dayKey(new Date(seg.start)),
         start: seg.start, end: seg.end, note: '', source: 'timer', createdAt: Date.now(),
-      });
+      };
+      await ref.set(data);
       total += minutes;
+      if (!lastSaved || minutes > lastSaved.minutes) lastSaved = { id: ref.id, week: seg.week, ...data };
     }
     return total;
   }
 
-  async function stopRunning(silent) {
+  function savedToast(mins, actId, extra) {
+    if (mins < 1) { toast('Under a minute, so nothing was saved'); return; }
+    const entry = lastSaved;
+    toast(`Saved ${fmtDur(mins)} of ${act(actId).name}${extra || ''}`, entry ? { label: 'Edit', run: () => openEntry(entry) } : null);
+  }
+
+  async function stopRunning(silent, end) {
     const cur = S.timer;
     if (!cur) return 0;
-    const mins = await saveSegments(cur.activityId, cur.start, Date.now());
+    const mins = await saveSegments(cur.activityId, cur.start, end || Date.now());
     S.timer = null;
     scheduleRender();
     await writeTimer(null);
-    if (!silent) toast(mins >= 1 ? `Saved ${fmtDur(mins)} of ${act(cur.activityId).name}` : 'Under a minute, so nothing was saved');
+    if (!silent) savedToast(mins, cur.activityId);
     return mins;
   }
 
+  // A timer left running this long was probably forgotten: ask before saving it.
+  const LONG_RUN_MS = 12 * 60 * MS_MIN;
+  const ranLong = () => !!S.timer && Date.now() - S.timer.start >= LONG_RUN_MS;
+
   async function onTile(actId) {
     if (S.busy || !guardWrite()) return;
+    if (ranLong()) { openStartEdit(true); return; }
     S.busy = true;
     try {
       const cur = S.timer;
@@ -1120,7 +1181,8 @@ img { max-width: 100%; }
         scheduleRender();
         await writeTimer(S.timer);
         const name = act(actId).name;
-        toast(cur && saved >= 1 ? `Saved ${fmtDur(saved)} of ${act(cur.activityId).name}. Now timing ${name}.` : `Timing ${name}`);
+        if (cur && saved >= 1) savedToast(saved, cur.activityId, `. Now timing ${name}.`);
+        else toast(`Timing ${name}`);
       }
     } catch (e) { writeFailed(e); }
     finally { S.busy = false; scheduleRender(); }
@@ -1351,32 +1413,73 @@ img { max-width: 100%; }
     finally { S.busy = false; scheduleRender(); }
   });
 
-  // --- running timer start dialog ---
-  function openStartEdit() {
+  // --- running timer: fix its length, move its start, or discard it ---
+  function openStartEdit(long) {
     if (!S.timer || !guardWrite()) return;
+    const t = S.timer, a = act(t.activityId);
+    const mins = Math.max(0, Math.floor((Date.now() - t.start) / MS_MIN));
+    const chip = $('#fixChip');
+    chip.style.setProperty('--act', a.color);
+    chip.innerHTML = iconHTML(a);
+    $('#fixName').textContent = a.name;
+    $('#fixRunning').textContent = `Running for ${fmtDur(mins)} · started ${startedLabel(t.start)}`;
+    const note = $('#fixLong');
+    note.hidden = long !== true;
+    note.textContent = long === true ? `This timer has been running for ${fmtDur(mins)}. If you forgot to stop it, change the time below to how long it really lasted, then tap Stop and save.` : '';
+    $('#fixH').value = Math.floor(mins / 60);
+    $('#fixM').value = mins % 60;
     const inp = $('#startInput');
-    inp.value = toLocalInput(S.timer.start);
+    inp.value = toLocalInput(t.start);
     inp.max = toLocalInput(Date.now());
     setErr($('#startErr'), '');
     resetDiscard();
     openDlg($('#startDlg'));
   }
+  function readStart() {
+    const v = $('#startInput').value;
+    if (S.timer && v === toLocalInput(S.timer.start)) return { t: S.timer.start }; // untouched: keep the exact start
+    const t = v ? new Date(v).getTime() : NaN;
+    if (!Number.isFinite(t)) return { err: 'Pick the date and time it started.' };
+    if (t > Date.now()) return { err: "The start time can't be in the future." };
+    if (Date.now() - t > 14 * DAY_MIN * MS_MIN) return { err: 'Pick a start time within the last 14 days.' };
+    return { t };
+  }
+  // Stop and save: keep the start, save the length typed in.
   $('#startForm').addEventListener('submit', async e => {
     e.preventDefault();
     const err = $('#startErr');
-    const v = $('#startInput').value;
-    const t = v ? new Date(v).getTime() : NaN;
-    if (!Number.isFinite(t)) return setErr(err, 'Pick a date and time.');
-    if (t > Date.now()) return setErr(err, "The start time can't be in the future.");
-    if (Date.now() - t > 14 * DAY_MIN * MS_MIN) return setErr(err, 'Pick a start time within the last 14 days.');
+    const st = readStart();
+    if (st.err) return setErr(err, st.err);
+    const h = Number($('#fixH').value || 0), m = Number($('#fixM').value || 0);
+    if (!Number.isFinite(h) || !Number.isFinite(m) || h < 0 || m < 0 || m > 59 || h % 1 || m % 1) return setErr(err, 'Use whole hours and 0 to 59 minutes.');
+    const minutes = h * 60 + m;
+    if (minutes < 1) return setErr(err, 'Enter how long it lasted, at least 1 minute. To throw it away, use Discard timer.');
+    const sinceStart = Math.floor((Date.now() - st.t) / MS_MIN);
+    if (minutes > sinceStart) return setErr(err, `That's longer than the time since it started (${fmtDur(sinceStart)}). Make it shorter or set an earlier start time.`);
     if (!S.timer || S.busy || !guardWrite()) return;
+    setErr(err, '');
     S.busy = true;
     try {
-      S.timer = { activityId: S.timer.activityId, start: t };
+      S.timer = { activityId: S.timer.activityId, start: st.t };
+      await stopRunning(false, st.t + minutes * MS_MIN);
+      $('#startDlg').close();
+    } catch (ex) { writeFailed(ex); }
+    finally { S.busy = false; scheduleRender(); }
+  });
+  // Save, keep running: only move the start time.
+  $('#startSave').addEventListener('click', async () => {
+    const err = $('#startErr');
+    const st = readStart();
+    if (st.err) return setErr(err, st.err);
+    if (!S.timer || S.busy || !guardWrite()) return;
+    setErr(err, '');
+    S.busy = true;
+    try {
+      S.timer = { activityId: S.timer.activityId, start: st.t };
       scheduleRender();
       await writeTimer(S.timer);
       $('#startDlg').close();
-      toast(`Start time set to ${startedLabel(t)}`);
+      toast(`Start time set to ${startedLabel(st.t)}`);
     } catch (ex) { writeFailed(ex); }
     finally { S.busy = false; scheduleRender(); }
   });
@@ -1402,11 +1505,12 @@ img { max-width: 100%; }
   });
   $('#tcStop').addEventListener('click', async () => {
     if (S.busy || !S.timer || !guardWrite()) return;
+    if (ranLong()) { openStartEdit(true); return; }
     S.busy = true;
     try { await stopRunning(false); } catch (ex) { writeFailed(ex); }
     finally { S.busy = false; scheduleRender(); }
   });
-  $('#tcEdit').addEventListener('click', openStartEdit);
+  $('#tcEdit').addEventListener('click', () => openStartEdit(false));
   $('#openAdd').addEventListener('click', () => openEntry(null));
   $('#openSettings').addEventListener('click', openSettings);
   $('#newAct').addEventListener('click', () => openActivity(null));
@@ -1423,7 +1527,7 @@ img { max-width: 100%; }
     finally { S.busy = false; scheduleRender(); }
   });
   $('#log').addEventListener('click', e => {
-    if (e.target.closest('[data-live]')) return openStartEdit();
+    if (e.target.closest('[data-live]')) return openStartEdit(false);
     const b = e.target.closest('[data-entry]');
     if (!b) return;
     const [wk, id] = b.dataset.entry.split('/');
