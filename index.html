@@ -125,7 +125,7 @@ body.running .logo .ring { animation: spin 8s linear infinite; }
 }
 /* iPhone date pickers ignore width: 100% and grow wider than the popup unless restyled. */
 @supports (-webkit-touch-callout: none) {
-  input.input[type="date"], input.input[type="datetime-local"] {
+  input.input[type="date"], input.input[type="datetime-local"], input.input[type="time"] {
     -webkit-appearance: none; appearance: none; display: block; min-width: 0; line-height: 46px;
   }
 }
@@ -363,6 +363,13 @@ dialog::backdrop { background: var(--scrim); -webkit-backdrop-filter: blur(3px);
 .unit { position: relative; }
 .unit .input { padding-right: 52px; }
 .unit span { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 14px; font-weight: 600; pointer-events: none; }
+.mode-pane { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.seg { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px; padding: 4px; border-radius: var(--r-sm); background: var(--bg); border: 1px solid var(--line); }
+.seg label { position: relative; display: grid; place-items: center; min-height: 38px; padding: 0 8px; border-radius: 9px; font-size: 14px; font-weight: 700; color: var(--muted); text-align: center; cursor: pointer; transition: background-color .15s, color .15s; }
+.seg label:has(input:checked) { background: var(--surface-2); color: var(--fg); box-shadow: inset 0 0 0 1px var(--line); }
+.seg label:has(input:focus-visible) { outline: 2px solid var(--peri); outline-offset: 2px; }
+.range-sum { min-height: 20px; font-size: 14px; font-weight: 700; color: var(--fg); font-variant-numeric: tabular-nums; }
+.range-sum .next { color: var(--amber); font-weight: 600; }
 .quick { display: flex; flex-wrap: wrap; gap: 6px; }
 .quick button { height: 36px; padding: 0 14px; border-radius: 99px; border: 1px solid var(--line); font-size: 13px; font-weight: 700; color: var(--muted); }
 .quick button:hover { color: var(--fg); background: var(--surface-2); }
@@ -527,16 +534,29 @@ img { max-width: 100%; }
       <label class="field">Date<input id="entryDate" class="input" type="date" required></label>
       <fieldset>
         <legend>Time spent</legend>
-        <div class="row2">
-          <label class="unit"><input id="entryH" class="input" type="number" inputmode="numeric" min="0" max="24" step="1" placeholder="0" aria-label="Hours"><span>hrs</span></label>
-          <label class="unit"><input id="entryM" class="input" type="number" inputmode="numeric" min="0" max="59" step="1" placeholder="0" aria-label="Minutes"><span>min</span></label>
+        <div class="seg" role="radiogroup" aria-label="How to enter the time">
+          <label><input class="vh" type="radio" name="entryMode" value="range" checked><span>From – to</span></label>
+          <label><input class="vh" type="radio" name="entryMode" value="dur"><span>Hours and minutes</span></label>
         </div>
-        <div class="quick" id="entryQuick">
-          <button type="button" data-add="15">+15m</button>
-          <button type="button" data-add="30">+30m</button>
-          <button type="button" data-add="60">+1h</button>
-          <button type="button" data-add="120">+2h</button>
-          <button type="button" data-add="0">Clear</button>
+        <div id="modeRange" class="mode-pane">
+          <div class="row2">
+            <label class="field">From<input id="entryFrom" class="input" type="time"></label>
+            <label class="field">To<input id="entryTo" class="input" type="time"></label>
+          </div>
+          <p id="rangeSum" class="range-sum" aria-live="polite"></p>
+        </div>
+        <div id="modeDur" class="mode-pane" hidden>
+          <div class="row2">
+            <label class="unit"><input id="entryH" class="input" type="number" inputmode="numeric" min="0" max="24" step="1" placeholder="0" aria-label="Hours"><span>hrs</span></label>
+            <label class="unit"><input id="entryM" class="input" type="number" inputmode="numeric" min="0" max="59" step="1" placeholder="0" aria-label="Minutes"><span>min</span></label>
+          </div>
+          <div class="quick" id="entryQuick">
+            <button type="button" data-add="15">+15m</button>
+            <button type="button" data-add="30">+30m</button>
+            <button type="button" data-add="60">+1h</button>
+            <button type="button" data-add="120">+2h</button>
+            <button type="button" data-add="0">Clear</button>
+          </div>
         </div>
       </fieldset>
       <label class="field"><span>Note <span class="opt">optional</span></span><input id="entryNote" class="input" type="text" maxlength="120" placeholder="e.g. Chem problem set" autocomplete="off"></label>
@@ -1141,7 +1161,9 @@ img { max-width: 100%; }
 
   // The biggest piece of the last timer save, so the "Saved" toast can offer Edit.
   let lastSaved = null;
-  async function saveSegments(actId, start, end) {
+  // Saves start..end as entries, split at week boundaries. extra: { note, source }
+  async function saveSegments(actId, start, end, extra) {
+    extra = extra || {};
     let total = 0;
     lastSaved = null;
     for (const seg of splitByWeek(start, end)) {
@@ -1150,7 +1172,7 @@ img { max-width: 100%; }
       const ref = S.db.collection(`weeks/${seg.week}/entries`).doc();
       const data = {
         activityId: actId, minutes, day: dayKey(new Date(seg.start)),
-        start: seg.start, end: seg.end, note: '', source: 'timer', createdAt: Date.now(),
+        start: seg.start, end: seg.end, note: extra.note || '', source: extra.source || 'timer', createdAt: Date.now(),
       };
       await ref.set(data);
       total += minutes;
@@ -1257,20 +1279,72 @@ img { max-width: 100%; }
     const date = $('#entryDate');
     date.max = today;
     date.value = entry && isDayKey(entry.day) ? entry.day : today;
+    const timed = !!entry && hasTimes(entry);
     $('#entryH').value = entry ? Math.floor(entry.minutes / 60) : '';
     $('#entryM').value = entry ? entry.minutes % 60 : '';
+    if (timed) {
+      $('#entryFrom').value = toHHMM(entry.start);
+      $('#entryTo').value = toHHMM(entry.end);
+    } else if (entry) {
+      $('#entryFrom').value = '';
+      $('#entryTo').value = '';
+    } else {
+      // New entry: "To" starts at now (rounded down to 5 minutes); pick when it started.
+      const now = new Date();
+      now.setMinutes(now.getMinutes() - (now.getMinutes() % 5), 0, 0);
+      $('#entryFrom').value = '';
+      $('#entryTo').value = toHHMM(now.getTime());
+    }
     $('#entryNote').value = entry ? (entry.note || '') : '';
-    const info = $('#entryInfo');
-    if (entry && typeof entry.start === 'number' && typeof entry.end === 'number') {
-      info.textContent = `Timed from ${startedLabel(entry.start)} to ${startedLabel(entry.end)}. Changing the time keeps the start and moves the end.`;
-      info.hidden = false;
-    } else info.hidden = true;
+    $('#entryInfo').textContent = timed
+      ? `Timed from ${startedLabel(entry.start)} to ${startedLabel(entry.end)}. Changing the hours keeps the start and moves the end.`
+      : '';
+    let mode;
+    if (entry) mode = timed && entry.end - entry.start <= DAY_MIN * MS_MIN ? 'range' : 'dur';
+    else { try { mode = localStorage.getItem(MODE_KEY) || 'range'; } catch (e) { mode = 'range'; } }
+    setEntryMode(mode, false);
+    updateRangeSum();
     $('#entryDelete').hidden = !entry;
     resetEntryDelete();
     setErr($('#entryErr'), '');
     openDlg($('#entryDlg'));
-    if (!entry) setTimeout(() => $('#entryH').focus(), 60);
+    if (!entry) setTimeout(() => (entryMode === 'range' ? $('#entryFrom') : $('#entryH')).focus(), 60);
   }
+
+  // --- "From – to" vs "Hours and minutes" ---
+  const MODE_KEY = 'mytracker.entryMode';
+  let entryMode = 'range';
+  const hasTimes = e => typeof e.start === 'number' && typeof e.end === 'number' && e.end > e.start;
+  const toHHMM = ms => { const d = new Date(ms); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
+  const parseHHMM = v => { const m = /^(\d{1,2}):(\d{2})/.exec(v || ''); return m ? { h: Number(m[1]), m: Number(m[2]) } : null; };
+  function setEntryMode(mode, remember) {
+    entryMode = mode === 'dur' ? 'dur' : 'range';
+    $$('input[name="entryMode"]').forEach(r => { r.checked = r.value === entryMode; });
+    $('#modeRange').hidden = entryMode !== 'range';
+    $('#modeDur').hidden = entryMode !== 'dur';
+    $('#entryInfo').hidden = !(entryMode === 'dur' && $('#entryInfo').textContent);
+    if (remember) { try { localStorage.setItem(MODE_KEY, entryMode); } catch (e) {} }
+  }
+  // Start and end on the chosen date; an end at or before the start means it ended the next day.
+  function rangeFromInputs(day) {
+    const f = parseHHMM($('#entryFrom').value), t = parseHHMM($('#entryTo').value);
+    if (!f || !t || !isDayKey(day)) return null;
+    const b = parseDay(day);
+    const start = new Date(b.getFullYear(), b.getMonth(), b.getDate(), f.h, f.m).getTime();
+    let end = new Date(b.getFullYear(), b.getMonth(), b.getDate(), t.h, t.m).getTime();
+    const nextDay = end <= start;
+    if (nextDay) end = new Date(b.getFullYear(), b.getMonth(), b.getDate() + 1, t.h, t.m).getTime();
+    return { start, end, nextDay, minutes: Math.round((end - start) / MS_MIN) };
+  }
+  function updateRangeSum() {
+    const r = rangeFromInputs($('#entryDate').value);
+    $('#rangeSum').innerHTML = r ? `= ${fmtDur(r.minutes)}${r.nextDay ? ' <span class="next">· ends the next day</span>' : ''}` : '';
+  }
+  $$('input[name="entryMode"]').forEach(r => r.addEventListener('change', () => { if (r.checked) setEntryMode(r.value, true); }));
+  ['#entryFrom', '#entryTo', '#entryDate'].forEach(s => {
+    $(s).addEventListener('input', updateRangeSum);
+    $(s).addEventListener('change', updateRangeSum);
+  });
 
   $('#entryQuick').addEventListener('click', e => {
     const b = e.target.closest('[data-add]');
@@ -1287,15 +1361,23 @@ img { max-width: 100%; }
     const err = $('#entryErr');
     const checked = $('input[name="entryAct"]:checked');
     const day = $('#entryDate').value;
-    const h = Number($('#entryH').value || 0), m = Number($('#entryM').value || 0);
     const note = $('#entryNote').value.trim().slice(0, 120);
     if (!checked) return setErr(err, 'Pick an activity.');
     if (!isDayKey(day)) return setErr(err, 'Pick a date.');
     if (day > dayKey(new Date())) return setErr(err, "You can't add time to a future date.");
-    if (!Number.isFinite(h) || !Number.isFinite(m) || h < 0 || m < 0 || m > 59 || h % 1 || m % 1) return setErr(err, 'Use whole hours and 0 to 59 minutes.');
-    const minutes = h * 60 + m;
-    if (minutes < 1) return setErr(err, 'Enter how long you spent, like 1 hr 30 min.');
-    if (minutes > DAY_MIN) return setErr(err, 'One entry can be at most 24 hours.');
+    let range = null, minutes = 0;
+    if (entryMode === 'range') {
+      range = rangeFromInputs(day);
+      if (!range) return setErr(err, 'Pick a start time and an end time.');
+      if (range.end > Date.now() + MS_MIN) return setErr(err, `That ends in the future (${startedLabel(range.end)}). Check the date and AM/PM.`);
+      minutes = range.minutes;
+    } else {
+      const h = Number($('#entryH').value || 0), m = Number($('#entryM').value || 0);
+      if (!Number.isFinite(h) || !Number.isFinite(m) || h < 0 || m < 0 || m > 59 || h % 1 || m % 1) return setErr(err, 'Use whole hours and 0 to 59 minutes.');
+      minutes = h * 60 + m;
+      if (minutes < 1) return setErr(err, 'Enter how long you spent, like 1 hr 30 min.');
+      if (minutes > DAY_MIN) return setErr(err, 'One entry can be at most 24 hours.');
+    }
     if (S.busy || !guardWrite()) return;
     setErr(err, '');
     const actId = checked.value;
@@ -1303,7 +1385,25 @@ img { max-width: 100%; }
     S.busy = true;
     $('#entrySave').disabled = true;
     try {
-      if (editingEntry) {
+      if (range) {
+        if (editingEntry) {
+          const old = editingEntry;
+          const segs = splitByWeek(range.start, range.end);
+          if (segs.length === 1 && segs[0].week === old.week) {
+            await S.db.doc(`weeks/${old.week}/entries/${old.id}`).set({
+              activityId: actId, minutes, day, start: range.start, end: range.end, note,
+              source: old.source || 'manual', createdAt: old.createdAt || Date.now(),
+            });
+          } else {
+            await saveSegments(actId, range.start, range.end, { note, source: old.source || 'manual' });
+            await S.db.doc(`weeks/${old.week}/entries/${old.id}`).delete();
+          }
+          toast('Entry updated');
+        } else {
+          const saved = await saveSegments(actId, range.start, range.end, { note, source: 'manual' });
+          toast(`Added ${fmtDur(saved)} of ${act(actId).name} (${fmtTime(range.start)} – ${fmtTime(range.end)})`);
+        }
+      } else if (editingEntry) {
         const old = editingEntry;
         const data = {
           activityId: actId, minutes, day, note,
