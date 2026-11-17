@@ -1205,15 +1205,18 @@ img { max-width: 100%; }
   }
 
   // ---------- dialogs ----------
+  // Freeze the page behind any open popup. Watches the dialogs' "open" attribute directly,
+  // since the "close" event isn't delivered reliably in every browser.
+  const allDialogs = $$('dialog');
+  const syncModalLock = () => document.documentElement.classList.toggle('modal-open', allDialogs.some(x => x.open));
+  const dialogWatch = new MutationObserver(syncModalLock);
+  allDialogs.forEach(d => dialogWatch.observe(d, { attributes: true, attributeFilter: ['open'] }));
   function openDlg(d) {
     if (!d.open) d.showModal();
-    document.documentElement.classList.add('modal-open');
+    syncModalLock();
     paintIcons();
   }
-  $$('dialog').forEach(d => {
-    d.addEventListener('close', () => {
-      if (!$$('dialog').some(x => x.open)) document.documentElement.classList.remove('modal-open');
-    });
+  allDialogs.forEach(d => {
     d.addEventListener('click', e => { if (e.target === d) d.close(); });
     $$('[data-close]', d).forEach(b => b.addEventListener('click', () => d.close()));
   });
