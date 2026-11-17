@@ -115,17 +115,24 @@ body.running .logo .ring { animation: spin 8s linear infinite; }
 .link-btn { color: var(--peri); font-weight: 700; font-size: 13px; }
 .link-btn:hover { text-decoration: underline; }
 
-.field { display: grid; gap: 6px; font-size: 13px; font-weight: 700; color: var(--muted); min-width: 0; }
+.field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; font-size: 13px; font-weight: 700; color: var(--muted); min-width: 0; }
 .field .opt { font-weight: 500; color: var(--dim); }
 .input {
-  height: 48px; width: 100%; min-width: 0; padding: 0 14px;
+  height: 48px; width: 100%; min-width: 0; max-width: 100%; padding: 0 14px;
   border-radius: var(--r-sm); border: 1px solid var(--line);
   background: var(--bg); color: var(--fg);
   font: inherit; font-size: 16px; font-weight: 600;
 }
+/* iPhone date pickers ignore width: 100% and grow wider than the popup unless restyled. */
+@supports (-webkit-touch-callout: none) {
+  input.input[type="date"], input.input[type="datetime-local"] {
+    -webkit-appearance: none; appearance: none; display: block; min-width: 0; line-height: 46px;
+  }
+}
+input.input::-webkit-date-and-time-value { text-align: left; }
 .input::placeholder { color: var(--dim); font-weight: 500; }
 .input:focus { outline: none; border-color: var(--peri); box-shadow: 0 0 0 3px color-mix(in srgb, var(--peri) 25%, transparent); }
-fieldset { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; gap: 8px; }
+fieldset { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 legend { padding: 0; margin-bottom: 8px; font-size: 13px; font-weight: 700; color: var(--muted); }
 .vh { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
 
@@ -305,7 +312,10 @@ dialog {
   padding: 0; border-radius: var(--r-lg);
   background: var(--surface); color: var(--fg); border: 1px solid var(--line);
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+  overflow: hidden; overscroll-behavior: contain;
 }
+/* While a popup is open the page behind it stays put. */
+html.modal-open, html.modal-open body { overflow: hidden; overscroll-behavior: none; }
 /* Sizing note: every flex item here uses flex-basis auto. Safari sizes a column flexbox
    with no fixed height from its items' flex-basis, so "flex: 1" (basis 0) collapsed the
    popup to nothing and left only the blurred backdrop on iPhone. */
@@ -320,7 +330,13 @@ dialog::backdrop { background: var(--scrim); -webkit-backdrop-filter: blur(3px);
 .dlg { display: flex; flex-direction: column; min-height: 0; flex: 0 1 auto; }
 .dlg-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 16px 8px 20px; }
 .dlg-head h2 { font-size: 20px; }
-.dlg-body { flex: 0 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 8px 20px 20px; display: grid; gap: 20px; overscroll-behavior: contain; }
+.dlg { overflow: hidden; }
+/* Popups scroll up and down only. */
+.dlg-body {
+  flex: 0 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  touch-action: pan-y; overscroll-behavior: contain;
+  padding: 8px 20px 20px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px;
+}
 .dlg-foot {
   flex: none;
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
@@ -343,7 +359,7 @@ dialog::backdrop { background: var(--scrim); -webkit-backdrop-filter: blur(3px);
 .pchip:has(input:checked) { border-color: var(--act); background: color-mix(in srgb, var(--act) 14%, transparent); }
 .pchip:has(input:focus-visible) { outline: 2px solid var(--peri); outline-offset: 2px; }
 
-.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.row2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
 .unit { position: relative; }
 .unit .input { padding-right: 52px; }
 .unit span { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 14px; font-weight: 600; pointer-events: none; }
@@ -1189,8 +1205,15 @@ img { max-width: 100%; }
   }
 
   // ---------- dialogs ----------
-  function openDlg(d) { if (!d.open) d.showModal(); paintIcons(); }
+  function openDlg(d) {
+    if (!d.open) d.showModal();
+    document.documentElement.classList.add('modal-open');
+    paintIcons();
+  }
   $$('dialog').forEach(d => {
+    d.addEventListener('close', () => {
+      if (!$$('dialog').some(x => x.open)) document.documentElement.classList.remove('modal-open');
+    });
     d.addEventListener('click', e => { if (e.target === d) d.close(); });
     $$('[data-close]', d).forEach(b => b.addEventListener('click', () => d.close()));
   });
